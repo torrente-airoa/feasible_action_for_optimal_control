@@ -1,0 +1,6 @@
+[submodule "external/thpool"]
+	path = external/thpool
+	url = https://github.com/Pithikos/C-Thread-Pool
+[submodule "external/daqp"]
+	path = external/daqp
+	url = https://github.com/darnstrom/daqp

@@ -1,0 +1,55 @@
+name: Unit Tests
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          clang-14 \
+          cmake \
+          libgtest-dev \
+          pybind11-dev \
+          libeigen3-dev
+        pip install "numpy<2" matplotlib
+    
+    - name: Install project dependencies
+      run: |
+        sudo ./scripts/install_3rd_party_dependencies.sh
+
+    - name: Create build directory
+      run: mkdir -p build
+    
+    - name: Configure CMake
+      run: |
+        cd build
+        cmake .. \
+          -DFAOC_N_JOINTS=8 \
+          -DCMAKE_C_COMPILER=/usr/bin/clang-14 \
+          -DCMAKE_CXX_COMPILER=/usr/bin/clang++-14 \
+          -DCMAKE_BUILD_TYPE=Release
+    
+    - name: Build
+      run: |
+        cd build && make
+    
+    - name: Run tests
+      run: |
+        cd build
+        ctest --output-on-failure -VV

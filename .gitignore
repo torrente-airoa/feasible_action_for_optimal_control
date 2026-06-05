@@ -1,0 +1,5 @@
+build*
+Testing*
+*__pycache__*
+.vscode
+CMakePresets.json
