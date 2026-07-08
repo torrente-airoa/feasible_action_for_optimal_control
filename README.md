@@ -3,8 +3,10 @@
 
 # Feasible Action for Optimal Control (FAOC)
 
-Lightweight implementation of the FAOC framework for controlling dynamical systems.
-This framework was used for controlling the ACE robot with a Reinforcement Learning agent in the 2026 work [*Outplaying elite table tennis players with an autonomous robot*](https://www.nature.com/articles/s41586-026-10338-5).
+Lightweight implementation of the Mapping Algorithm and Motion Planning Optimal Control Problem from the FAOC framework for controlling dynamical systems.
+This implementation, combined with a Reinforcement Learning agent, was used for controlling the ACE robot in the 2026 work [*Outplaying elite table tennis players with an autonomous robot*](https://www.nature.com/articles/s41586-026-10338-5).
+
+![FAOC](doc/FAOC_diagram.jpg)
 
 > [!NOTE]
 > The current implementation supports only Cubic splines and 1- or 2-dimensional action spaces.
@@ -18,6 +20,10 @@ FAOC is a control framework that provides a simple, constant action space for co
 Actions selected from this action space (which we call _abstract set_) automatically yield a unique feasible trajectory to control the plant in open loop for a short window of time.
 This is achieved by first mapping the chosen abstract action to the set of feasible terminal constraints for an underlying motion planning problem, given the current state of the system.
 This mapping is bijective and invertible, so it is easy to learn (e.g. via Reinforcement Learning) how to select the optimal actions.
+
+The following is a visualization of the mapping for a particular control problem (note the shape of the target set depends on the constraints and the current state of the system and is implicitly inferred):
+
+![Mapping](doc/Mapping.png)
 
 See [the practical example](#example-joint-control-of-a-8-dof-robot-arm) for more information about how to use FAOC.
 

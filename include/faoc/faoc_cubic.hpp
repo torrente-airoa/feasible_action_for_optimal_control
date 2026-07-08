@@ -60,12 +60,6 @@ class FAOCCubicApprox : public FAOC<kJointSetDim> {
     : FAOC<kJointSetDim>("cubic_approx", tau_c, n_l, sampling_freq, abstract_set_dim, kMaxTimeEst, joint_data,
                          online_settings) {}
 
-  // NOLINTNEXTLINE(readability-convert-member-functions-to-static): For compatibility, we don't make it static
-  [[nodiscard]] Eigen::MatrixXd GetVertices(uint) const {
-    LOG(ERROR) << "The approximate FAOC does not have an explicit representation of the action set";
-    return Eigen::MatrixXd::Zero(0, GetAbstractSpaceDimension());
-  }
-
   virtual ~FAOCCubicApprox() {
     if (reset_planner_initialized_) {
       freeResetData(rpd_, kNJoints);

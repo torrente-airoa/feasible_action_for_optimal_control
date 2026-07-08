@@ -65,7 +65,6 @@ PYBIND11_MODULE(faoc, m) {
     .def("get_last_joint_action", &FAOCCubicApprox::GetLastJointAction)
     .def("get_last_joint_state", &FAOCCubicApprox::GetLastJointState)
     .def("get_fusion_index", &FAOCCubicApprox::GetFusionIndex)
-    .def("get_vertices", &FAOCCubicApprox::GetVertices, py::arg("joint_i"))
     .def("get_max_controlled_invariant_set", &FAOCCubicApprox::GetMaxControlledInvariantSet, py::arg("joint_i"))
     .def("get_max_controlled_invariant_set_scaled", &FAOCCubicApprox::GetMaxControlledInvariantSetScaled,
          py::arg("joint_i"))
