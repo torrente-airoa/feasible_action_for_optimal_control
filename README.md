@@ -16,10 +16,10 @@ This implementation, combined with a Reinforcement Learning agent, was used for 
 
 ## What is FAOC?
 
-FAOC is a control framework that provides a simple, constant action space for controlling a constrained dynamical system.
-Actions selected from this action space (which we call _abstract set_) automatically yield a unique feasible trajectory to control the plant in open loop for a short window of time.
+FAOC is a control framework that provides a simple, static action space for controlling a constrained dynamical system.
+Actions selected from this action space (which we call _abstract set_) automatically yield a unique feasible trajectory to control the system in open loop for a short window of time.
 This is achieved by first mapping the chosen abstract action to the set of feasible terminal constraints for an underlying motion planning problem, given the current state of the system.
-This mapping is bijective and invertible, so it is easy to learn (e.g. via Reinforcement Learning) how to select the optimal actions.
+This mapping is bijective, invertible, and it takes into account of the sets' shapes such that distributions do not degenerate when mapped (i.e. accumulation and dispersion of points is reduced), so it is easy to learn (e.g. via Reinforcement Learning) how to select the optimal actions.
 
 The following is a visualization of the mapping for a particular control problem (note the shape of the target set depends on the constraints and the current state of the system and is implicitly inferred):
 
@@ -72,9 +72,9 @@ FAOC allows to generate smooth trajectories for a robot system.
 First, we need to define the FAOC hyperparameters, depending on the requirements of the robot application.
 All of these parameters trade-off performance and computation time.
 - **Closed loop control frequency**: For this application, we choose to control the arm at 20Hz. This implies that we need to generate **trajectory segments of 50ms in length**. One segment contains one or more concatenated 3rd degree order polynomials.
-- **Frequency bandwidth**: In a segment, all polynomials are the same time-length. This length determines the frequency bandwith of the motion plan, as increasing the number of polynomials given the total segment length allows for higher frequency trajectories. For very reactive systems, a recomended target would be for each polynomial segment to be about 8 to 10ms long.
+- **Frequency bandwidth**: In a segment, all polynomials are the same time-length. This length determines the frequency bandwith of the motion plan, as increasing the number of polynomials given the total segment length allows for higher frequency trajectories. For very reactive systems, a recommended target would be for each polynomial segment to be about 8 to 10ms long.
 - **Motion plan frequency**: This should be set to the low-level control frequency of the system. For example, 200Hz, 1000Hz, etc.
-- **Action space dimension**: Our current implementation allows to have 1 or 2 dimensional abstract action spaces. The first dimension maps to the terminal joint position, and the (optional) second one to the joint velocity. A 2D action space thus simultaneously constraints the terminal joint position and velocity.
+- **Action space dimension**: Our current implementation allows to have 1 or 2 dimensional abstract action spaces per joint. The first dimension maps to the terminal joint position, and the (optional) second one to the joint velocity. A 2D action space thus simultaneously constraints the terminal joint position and velocity.
 
 ### Using the Python library
 After the build and installation are successful, one can import the python libraries by simply:
