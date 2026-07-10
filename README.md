@@ -16,10 +16,8 @@ This implementation, combined with a Reinforcement Learning agent, was used for 
 
 ## What is FAOC?
 
-FAOC is a control framework that provides a simple, static action space for controlling a constrained dynamical system.
-Actions selected from this action space (which we call _abstract set_) automatically yield a unique feasible trajectory to control the system in open loop for a short window of time.
-This is achieved by first mapping the chosen abstract action to the set of feasible terminal constraints for an underlying motion planning problem, given the current state of the system.
-This mapping is bijective, invertible, and it takes into account of the sets' shapes such that distributions do not degenerate when mapped (i.e. accumulation and dispersion of points is reduced), so it is easy to learn (e.g. via Reinforcement Learning) how to select the optimal actions.
+FAOC is a control framework that provides a geometrically simple, static action space, which does not represent any physical quantity, which we therefore denote as _abstract_, for controlling a constrained dynamical system with e.g. Reinforcement Learning (RL).
+Abstract actions $\bar{a}$ selected from abstract action space $\bar{\mathcal{A}}$ automatically yield a unique feasible trajectory to control the system in open loop for a short window of time. This is possible through a novel mapping which maps the chosen abstract action to the set of feasible terminal constraints for the underlying motion planning problem, given the current state of the system (we denote this set as $\mathcal{P}(x)$ ). This mapping is bijective, invertible, and it takes into account of the sets' shapes such that distributions do not degenerate when mapped (i.e. distortions of the mapped distribution are reduced, see Fig.2 in the paper), so it is easy to explore the action space and learn how to select the optimal actions.
 
 The following is a visualization of the mapping for a particular control problem (note the shape of the target set depends on the constraints and the current state of the system and is implicitly inferred):
 
@@ -68,13 +66,17 @@ To install the libraries in your local user, please use the following cmake flag
 ```
 
 ## Example: Joint control of a 8-DoF robot arm
-FAOC allows to generate smooth trajectories for a robot system.
-First, we need to define the FAOC hyperparameters, depending on the requirements of the robot application.
-All of these parameters trade-off performance and computation time.
-- **Closed loop control frequency**: For this application, we choose to control the arm at 20Hz. This implies that we need to generate **trajectory segments of 50ms in length**. One segment contains one or more concatenated 3rd degree order polynomials.
-- **Frequency bandwidth**: In a segment, all polynomials are the same time-length. This length determines the frequency bandwith of the motion plan, as increasing the number of polynomials given the total segment length allows for higher frequency trajectories. For very reactive systems, a recommended target would be for each polynomial segment to be about 8 to 10ms long.
-- **Motion plan frequency**: This should be set to the low-level control frequency of the system. For example, 200Hz, 1000Hz, etc.
-- **Action space dimension**: Our current implementation allows to have 1 or 2 dimensional abstract action spaces per joint. The first dimension maps to the terminal joint position, and the (optional) second one to the joint velocity. A 2D action space thus simultaneously constraints the terminal joint position and velocity.
+See Equation 9 in the paper for the mathematical formulation of the Optimal Control Problem (OCP) for motion planning.
+FAOC allows to generate smooth trajectories for a robot system. These trajectories are composed of shorter _trajectory segments_, solution of consecutive OCPs, that are concatenated. Each _trajectory segment_ represents a decision in a Markov decision process (MDP). Therefore, when learning a task through reinforcement learning (RL), each action corresponds to a _trajectory segment_. In our application of motion planning for robotic table tennis, the action is the desired 1D (position) or 2D (position-velocity) subset of the terminal state of the _trajectory segment_ (the state in the formulation is position-velocity-acceleration, since the _trajectory segment_ consists of concatenated cubic polynomials).
+
+FAOC hyperparameters:
+- **Closed loop control frequency** or **RL frequency** `1/(tau_c*n_l)`: This is the frequency at which a high-level agent, e.g. an RL agent, chooses abstract actions. For instance, we could choose to control the arm at 20Hz. This implies that we need to generate **trajectory segments of 50ms in length**. As briefly mentioned above, one trajectory segment in turn consists of `n_l` (corresponding to $N$ in the paper) concatenated cubic polynomials (each having costant jerk) of length `tau_c` (corresponding to $T$ in the paper). Therefore, the closed loop control frequency is implicitly determined by `n_l` and `tau_c` in the code. In the code example below, `n_l=5` cubic polynomials and `tau_c=0.01` seconds, and the trajectory segment length is therefore `tau_c*n_l=0.05` seconds (i.e. 50ms). In general, a lower bound for `n_l` exists for the OCP to not be ill defined, which is checked in the code, while `tau_c` controls the frequency of the OCP and has other complex implications we don't discuss here.
+- **Motion plan frequency** `sampling_freq`: This should be set to the low-level control frequency of the system, e.g. 1000Hz. The OCP solution composed of continuous-time polynomials will be sampled at this frequency. In the code example below `sampling_freq=1000`Hz.
+- **Action space dimension** `abstract_set_dim`: Our current implementation supports 1 or 2 dimensional abstract action spaces per joint. The first dimension maps to the terminal joint position, and the second one to the joint velocity. In the code example below `abstract_set_dim=2`.
+
+Below, we illustrate how FAOC works more in detail. Top: the executed sequence of actions (black dots), position--velocity trajectories (gray lines) and feasible polytopes for one robot joint during a robot shot. On the top-left, the ranges for the $x$-axis (position) and $y$-axis (velocity) correspond to the full kinematic limits of that joint. On the top-right, the axes are magnified for the range used during that particular motion. The feasible polytopes are small due to the relatively high control frequency of 31.25Hz. Bottom: corresponding position, velocity, acceleration, and jerk trajectories as a function of time.
+
+![Fig3_paper](doc/Fig3_paper.png)
 
 ### Using the Python library
 After the build and installation are successful, one can import the python libraries by simply:
@@ -108,10 +110,10 @@ The FAOC class is initialized as follows.
 `MPOnlineSettings` supports optional arguments to limit the computation time for the motion planning, but for most applications, it can be initialized by default.
 ```py
     faoc = CubicSpline(
-        tau_c=0.01,                   # Length of one polynomial in seconds
-        n_l=5,                        # Number of polynomials per segment
+        tau_c=0.01,                   # Length of one cubic polynomial in seconds, corresponding to T in the paper
+        n_l=5,                        # Number of polynomials per segment, corresponding to N in the paper
         sampling_freq=1000,           # Sampling frequency of the robot
-        abstract_set_dim=2            # Dimensionality of the action space
+        abstract_set_dim=2            # Dimensionality of the action space, corresponding to n in the paper
         joint_data=joint_data,
         online_settings=MPOnlineSettings(),
     )
