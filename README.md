@@ -91,7 +91,7 @@ Additionally, whether the robot kinematic structure is symmetrical about a speci
 For example, a humanoid robot is usually symmetric along the body length axis.
 Symmetry properties can be useful for augmenting the training data by mirroring the motion plans along such an axis.
 For every joint, one of the following options must be selected
-- `0`: the robot does not have an axis of symmetry, or symmetric augmentation is not needed.
+- `0`: the robot does not have an axis of symmetry, or symmetric augmentation is not needed. If at least one joint has this value, then mirroring functions will be entirely disabled, and will return an error code if called.
 - `1`: the robot has an axis of symmetry, but the joint does not apply (for example, a revolute joint with the axis of rotation perpendicular to the symmetry axis)
 - `-1`: otherwise
 ```py
