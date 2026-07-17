@@ -129,10 +129,8 @@ add_custom_command(
 
 # Install Python and C artifacts
 install(TARGETS ${PROJECT_NAME}_py LIBRARY DESTINATION .)
-install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/faoc.pyi
-        DESTINATION .)
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/faoc_utils
-        DESTINATION .)
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/faoc.pyi DESTINATION .)
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/faoc_utils DESTINATION .)
 
 install(
   TARGETS ${PROJECT_NAME}_core ${PROJECT_NAME}_cpp
