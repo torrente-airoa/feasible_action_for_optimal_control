@@ -1,0 +1,9 @@
+include README.md
+include LICENSE
+include CMakeLists.txt
+include faoc.pyi
+recursive-include include *.h *.hpp
+recursive-include src *.c *.cpp *.h *.hpp
+recursive-include external *.c *.cpp *.h *.hpp *.cmake CMakeLists.txt LICENSE README.md
+recursive-include faoc_utils *.py
+recursive-include test *.py *.c *.cpp

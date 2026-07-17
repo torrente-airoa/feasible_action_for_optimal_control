@@ -77,18 +77,6 @@ set(FAOC_CPP_MAX_ABSTRACT_DIM_SIZE
     4
     CACHE STRING
           "Maximum abstract action set dimension for C++ wrapper compilation")
-set(FAOC_N_JOINTS
-    ""
-    CACHE STRING "Number of joints for C++ wrapper compilation")
-if(NOT DEFINED FAOC_N_JOINTS OR FAOC_N_JOINTS STREQUAL "")
-  message(
-    FATAL_ERROR
-      "\n[ERROR] FAOC_N_JOINTS is not set!\n"
-      "You must provide this variable from the command line.\n"
-      "Example usage:\n" "  cmake .. -DFAOC_N_JOINTS=8\n")
-else()
-  message(STATUS "FAOC_N_JOINTS is set to ${FAOC_N_JOINTS}")
-endif()
 
 set(FAOC_CPP_COMPILE_UNIT
     "${CMAKE_CURRENT_BINARY_DIR}/faoc_cpp_compile_unit.cpp")
@@ -100,8 +88,7 @@ add_library(faoc::cpp ALIAS ${PROJECT_NAME}_cpp)
 target_compile_features(${PROJECT_NAME}_cpp PUBLIC cxx_std_20)
 target_compile_definitions(
   ${PROJECT_NAME}_cpp
-  PUBLIC FAOC_MAX_ABSTRACT_DIM_SIZE=${FAOC_CPP_MAX_ABSTRACT_DIM_SIZE}
-         FAOC_N_JOINTS=${FAOC_N_JOINTS})
+  PUBLIC FAOC_MAX_ABSTRACT_DIM_SIZE=${FAOC_CPP_MAX_ABSTRACT_DIM_SIZE})
 # Suppress VLA warnings from included C99 headers
 target_compile_options(${PROJECT_NAME}_cpp PRIVATE -Wno-vla-extension)
 
@@ -141,15 +128,11 @@ add_custom_command(
   COMMENT "Copying Python artifacts to build directory")
 
 # Install Python and C artifacts
-if(NOT DEFINED PYTHON_INSTALL_DIR)
-  set(PYTHON_INSTALL_DIR ${Python3_SITEARCH})
-endif()
-
-install(TARGETS ${PROJECT_NAME}_py LIBRARY DESTINATION ${PYTHON_INSTALL_DIR})
+install(TARGETS ${PROJECT_NAME}_py LIBRARY DESTINATION .)
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/faoc.pyi
-        DESTINATION ${PYTHON_INSTALL_DIR})
+        DESTINATION .)
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/faoc_utils
-        DESTINATION ${PYTHON_INSTALL_DIR})
+        DESTINATION .)
 
 install(
   TARGETS ${PROJECT_NAME}_core ${PROJECT_NAME}_cpp

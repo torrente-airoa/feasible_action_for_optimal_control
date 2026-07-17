@@ -42,22 +42,34 @@ sudo ./scripts/install_3rd_party_dependencies.sh
 ```
 
 ### Building and installing FAOC:
-Build the FAOC framework with clang:
+
+The easiest way to build and install FAOC is using pip:
+```bash
+pip install .
+```
+
+For development installations (editable mode):
+```bash
+pip install -e .
+```
+
+Alternatively, to build a wheel for distribution:
+```bash
+pip install build
+python -m build --wheel
+```
+
+For manual CMake-based installation:
 ```bash
 mkdir build
 cd build
 cmake .. \
     -DCMAKE_C_COMPILER=/usr/bin/clang-14 \
     -DCMAKE_CXX_COMPILER=/usr/bin/clang++-14 \
-    -DCMAKE_BUILD_TYPE=Release
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=$HOME/.local
 make -j4
-sudo make install
-```
-
-To install the libraries in your local user, please use the following cmake flags, e.g.:
-```bash
-    -DCMAKE_INSTALL_PREFIX=$HOME/.local \
-    -DPYTHON_INSTALL_DIR=$HOME/.local/lib/python3/site-packages
+make install
 ```
 
 ## Example: Joint control of an 8-DoF robot arm

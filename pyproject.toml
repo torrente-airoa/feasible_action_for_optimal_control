@@ -1,0 +1,70 @@
+[build-system]
+requires = ["scikit-build-core", "pybind11", "setuptools"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "faoc"
+version = "0.1.0"
+description = "Feasible Action for Optimal Control - lightweight motion planning framework"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Guillem Torrente", email = "guillem.torrentee@sony.com" }
+]
+keywords = ["motion planning", "control", "optimal control", "robotics"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: C++",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "numpy>=1.26.4,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "numpy",
+    "matplotlib",
+]
+
+[project.urls]
+Homepage = "https://github.com/SonyResearch/feasible_action_for_optimal_control"
+Repository = "https://github.com/SonyResearch/feasible_action_for_optimal_control"
+Issues = "https://github.com/SonyResearch/feasible_action_for_optimal_control/issues"
+
+[tool.scikit-build]
+cmake.version = ">=3.22"
+cmake.build-type = "Release"
+
+# Add compile flags for optimization
+cmake.define = { "CMAKE_CXX_STANDARD" = "17", "CMAKE_C_COMPILER" = "clang-14", "CMAKE_CXX_COMPILER" = "clang++-14" }
+
+[tool.black]
+line-length = 120
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.pylint.messages_control]
+disable = [
+    "all",
+]
+enable = [
+    "E",
+    "F",
+]
+
+[tool.pylint.format]
+max-line-length = 120
