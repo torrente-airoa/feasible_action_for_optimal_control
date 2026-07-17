@@ -67,6 +67,7 @@ def visualize_color_mapping(n_points: int = 1000, sampling_modes: Optional[list[
         tau_c=0.01,
         n_l=4,
         sampling_freq=1000,
+        n_joints=len(joint_data.mirroring_logic),
         joint_data=joint_data,
         online_settings=MPOnlineSettings(),
         abstract_set_dim=2,

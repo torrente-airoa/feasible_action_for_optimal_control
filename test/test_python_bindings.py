@@ -34,6 +34,7 @@ JOINT_DATA = JointData(
     joint_acc_max=[10.8, 15.7, 39.27, 39.27, 125.66, 125.66, 78.54, 628.32],
     joint_jerk_max=[600.0, 600.0, 750.0, 750.0, 1500.0, 1500.0, 1000.0, 6000.0],
 )
+N_JOINTS = len(JOINT_DATA.mirroring_logic)
 
 INIT = np.array(
     [
@@ -122,6 +123,7 @@ def test_abstract_multistep():
         tau_c=tau_c,
         n_l=n_l,
         sampling_freq=f_s,
+        n_joints=N_JOINTS,
         joint_data=JOINT_DATA,
         online_settings=MPOnlineSettings(),
         abstract_set_dim=2,
@@ -132,6 +134,7 @@ def test_abstract_multistep():
         tau_c=tau_c,
         n_l=n_l,
         sampling_freq=f_s,
+        n_joints=N_JOINTS,
         joint_data=JOINT_DATA,
         online_settings=MPOnlineSettings(),
         abstract_set_dim=2,
@@ -282,6 +285,7 @@ def test_tolerance():
         tau_c=tau_c,
         n_l=n_l,
         sampling_freq=f_s,
+        n_joints=N_JOINTS,
         joint_data=JOINT_DATA,
         online_settings=MPOnlineSettings(),
         abstract_set_dim=2,
@@ -372,6 +376,7 @@ def test_tolerance_with_mirroring_and_solving():
         tau_c=tau_c,
         n_l=n_l,
         sampling_freq=f_s,
+        n_joints=N_JOINTS,
         joint_data=JOINT_DATA,
         online_settings=MPOnlineSettings(),
         abstract_set_dim=2,
@@ -385,6 +390,7 @@ def test_tolerance_with_mirroring_and_solving():
         tau_c=tau_c,
         n_l=n_l,
         sampling_freq=f_s,
+        n_joints=N_JOINTS,
         joint_data=JOINT_DATA,
         online_settings=MPOnlineSettings(),
         abstract_set_dim=2,
@@ -428,16 +434,17 @@ def test_reset_faoc():
         tau_c=tau_c,
         n_l=n_l,
         sampling_freq=f_s,
+        n_joints=N_JOINTS,
         joint_data=JOINT_DATA,
         online_settings=MPOnlineSettings(),
         abstract_set_dim=2,
     )
 
-    faoc.set_velocity_limit_gain(np.ones(8) * 0.7)
-    faoc.set_acceleration_limit_gain(np.ones(8) * 0.7)
+    faoc.set_velocity_limit_gain(np.ones(N_JOINTS) * 0.7)
+    faoc.set_acceleration_limit_gain(np.ones(N_JOINTS) * 0.7)
     faoc.initialize(ObjectiveFunction.magnitude)
 
-    x0_3d = np.hstack((INIT, np.zeros((8, 1))))
+    x0_3d = np.hstack((INIT, np.zeros((N_JOINTS, 1))))
     p_f_low = np.array([0.0, -0.7, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     p_f_up = np.array([0.8, 0.7, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     p_f = np.array([0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
@@ -481,6 +488,7 @@ def test_faoc_approx_1d():
         tau_c=tau_c,
         n_l=n_l,
         sampling_freq=f_s,
+        n_joints=N_JOINTS,
         joint_data=JOINT_DATA,
         online_settings=MPOnlineSettings(),
         abstract_set_dim=1,  # Set to 1D

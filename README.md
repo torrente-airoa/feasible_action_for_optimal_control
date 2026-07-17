@@ -11,9 +11,6 @@ This implementation, combined with a Reinforcement Learning agent, was used for 
 > [!NOTE]
 > The current implementation supports only Cubic splines and 1- or 2-dimensional action spaces.
 
-> [!IMPORTANT]
-> Currently, FAOC needs to be compiled for a specific number of joints (Degrees of Freedom)
-
 ## What is FAOC?
 
 FAOC is a control framework that provides a geometrically simple, static action space, which does not represent any physical quantity, which we therefore denote as _abstract_, for controlling a constrained dynamical system with e.g. Reinforcement Learning (RL).
@@ -23,7 +20,7 @@ The following is a visualization of the mapping for a particular control problem
 
 ![Mapping](doc/Mapping.png)
 
-See [the practical example](#example-joint-control-of-a-8-dof-robot-arm) for more information about how to use FAOC.
+See [the practical example](#example-joint-control-of-an-8-dof-robot-arm) for more information about how to use FAOC.
 
 ## Getting started
 ### Recommended prerequisites for building and using FAOC in an Ubuntu system:
@@ -45,13 +42,11 @@ sudo ./scripts/install_3rd_party_dependencies.sh
 ```
 
 ### Building and installing FAOC:
-Build the FAOC framework with clang by **specifying the number of joints** (degrees of freedom) of your system.
-For example, for the case of 8 joints:
+Build the FAOC framework with clang:
 ```bash
 mkdir build
 cd build
 cmake .. \
-    -DFAOC_N_JOINTS=8
     -DCMAKE_C_COMPILER=/usr/bin/clang-14 \
     -DCMAKE_CXX_COMPILER=/usr/bin/clang++-14 \
     -DCMAKE_BUILD_TYPE=Release
@@ -65,7 +60,7 @@ To install the libraries in your local user, please use the following cmake flag
     -DPYTHON_INSTALL_DIR=$HOME/.local/lib/python3/site-packages
 ```
 
-## Example: Joint control of a 8-DoF robot arm
+## Example: Joint control of an 8-DoF robot arm
 See Equation 9 in the paper for the mathematical formulation of the Optimal Control Problem (OCP) for motion planning.
 FAOC allows to generate smooth trajectories for a robot system. These trajectories are composed of shorter _trajectory segments_, solution of consecutive OCPs, that are concatenated. Each _trajectory segment_ represents a decision in a Markov decision process (MDP). Therefore, when learning a task through reinforcement learning (RL), each action corresponds to a _trajectory segment_. In our application of motion planning for robotic table tennis, the action is the desired 1D (position) or 2D (position-velocity) subset of the terminal state of the _trajectory segment_ (the state in the formulation is position-velocity-acceleration, since the _trajectory segment_ consists of concatenated cubic polynomials).
 
@@ -113,20 +108,21 @@ The FAOC class is initialized as follows.
         tau_c=0.01,                   # Length of one cubic polynomial in seconds, corresponding to T in the paper
         n_l=5,                        # Number of polynomials per segment, corresponding to N in the paper
         sampling_freq=1000,           # Sampling frequency of the robot
-        abstract_set_dim=2            # Dimensionality of the action space, corresponding to n in the paper
+        n_joints=len(joint_data.mirroring_logic),
+        abstract_set_dim=2,           # Dimensionality of the action space, corresponding to n in the paper
         joint_data=joint_data,
         online_settings=MPOnlineSettings(),
     )
     status = faoc.initialize(ObjectiveFunction.difference)
 ```
 
-The initial configuration of the system must be informed to the solver as follows. For the case of the 8-DoF robot, the initial state is an 8x3 matrix composed of the initial joint positions, velocities and accelerations. The initial state must be within the kinodynamic limits specified in `JointData`.
+The initial configuration of the system must be informed to the solver as follows. The initial state is an `n_joints x 3` matrix composed of the initial joint positions, velocities and accelerations. The initial state must be within the kinodynamic limits specified in `JointData`.
 ```py
-x_0 = np.zeros((8, 3))
+x_0 = np.zeros((len(joint_data.mirroring_logic), 3))
 status = faoc.set_initial_state(x_0)
 ```
 
-Finally, the following steps are repeatedly executed, where `action` is an 8x1 or 8x2 matrix (depending on the abstract set dimension). 
+Finally, the following steps are repeatedly executed, where `action` is an `n_joints x 1` or `n_joints x 2` matrix (depending on the abstract set dimension). 
 Note that the FAOC calls should in practice be run in parallel to the execution to ensure that the next solution plan is available before the previous one ends.
 ```py
 for step in steps:

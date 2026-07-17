@@ -1,8 +1,11 @@
 #include <Eigen/Core>
+#include <algorithm>
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <mutex>
 #include <sstream>
+#include <vector>
 
 #include "helper.h"
 #include "multiStepAPI.h"
@@ -46,8 +49,6 @@ constexpr std::array<double, kMaxAbstractSetDim> CreateArray(double val) {
   }
   return arr;  // Returns the array by value
 }
-
-constexpr int kNJoints = FAOC_N_JOINTS;
 
 constexpr auto kZMin = CreateArray(-1);  // lower bounds on abstract rectangular action set (open limits)
 constexpr auto kZMax = CreateArray(1);   // upper bounds on abstract rectangular action set (open limits)
@@ -106,21 +107,30 @@ struct MPOnlineSettings {
 };
 
 struct JointData {
-  const std::array<int, kNJoints> mirroring_logic;
-  const std::array<double, kNJoints> pos_min;
-  const std::array<double, kNJoints> pos_max;
-  const std::array<double, kNJoints> vel_max;
-  const std::array<double, kNJoints> acc_max;
-  const std::array<double, kNJoints> jerk_max;
-  explicit JointData(const std::array<int, kNJoints>& mirroring_logic, const std::array<double, kNJoints>& pos_min,
-                     const std::array<double, kNJoints>& pos_max, const std::array<double, kNJoints>& vel_max,
-                     const std::array<double, kNJoints>& acc_max, const std::array<double, kNJoints>& jerk_max)
+  const std::vector<int> mirroring_logic;
+  const std::vector<double> pos_min;
+  const std::vector<double> pos_max;
+  const std::vector<double> vel_max;
+  const std::vector<double> acc_max;
+  const std::vector<double> jerk_max;
+  explicit JointData(const std::vector<int>& mirroring_logic, const std::vector<double>& pos_min,
+                     const std::vector<double>& pos_max, const std::vector<double>& vel_max,
+                     const std::vector<double>& acc_max, const std::vector<double>& jerk_max)
     : mirroring_logic(mirroring_logic),
       pos_min(pos_min),
       pos_max(pos_max),
       vel_max(vel_max),
       acc_max(acc_max),
       jerk_max(jerk_max) {
+    const size_t n_joints = mirroring_logic.size();
+    if (n_joints == 0) {
+      throw std::runtime_error("At least one joint must be defined");
+    }
+    if (pos_min.size() != n_joints || pos_max.size() != n_joints || vel_max.size() != n_joints ||
+        acc_max.size() != n_joints || jerk_max.size() != n_joints) {
+      throw std::runtime_error("All JointData vectors must have the same length");
+    }
+
     // Check that mirroring logic only contains 1, 0 or -1
     for (const auto& logic : mirroring_logic) {
       if (logic != 1 && logic != 0 && logic != -1) {
@@ -130,9 +140,9 @@ struct JointData {
   }
 };
 
-inline Eigen::Vector<double, kNJoints> make_position_limits_symmetric(mpdata* mpd) {
-  Eigen::Vector<double, kNJoints> ret;
-  for (uint i = 0; i < kNJoints; ++i) {
+inline Eigen::VectorXd make_position_limits_symmetric(mpdata* mpd, int n_joints) {
+  Eigen::VectorXd ret(n_joints);
+  for (int i = 0; i < n_joints; ++i) {
     ret(i) = (mpd[i].joint_lims.qup + mpd[i].joint_lims.qlow) / 2;
     mpd[i].joint_lims.qup -= ret(i);
     mpd[i].joint_lims.qlow -= ret(i);
@@ -140,8 +150,8 @@ inline Eigen::Vector<double, kNJoints> make_position_limits_symmetric(mpdata* mp
   return ret;
 }
 
-inline Eigen::Vector<double, kNJoints> set_robot_limits(mpdata* mpd, const JointData& joint_data) {
-  for (uint i = 0; i < kNJoints; ++i) {
+inline Eigen::VectorXd set_robot_limits(mpdata* mpd, const JointData& joint_data, int n_joints) {
+  for (int i = 0; i < n_joints; ++i) {
     mpd[i].joint_lims.qlow = joint_data.pos_min[i];
     mpd[i].joint_lims.qup = joint_data.pos_max[i];
     mpd[i].joint_lims.qdotup = joint_data.vel_max[i];
@@ -153,10 +163,10 @@ inline Eigen::Vector<double, kNJoints> set_robot_limits(mpdata* mpd, const Joint
     mpd[i].term_state_devs.delta_qdotlow = 0.0;
     mpd[i].term_state_devs.delta_qdotup = 0.0;
   }
-  return make_position_limits_symmetric(mpd);
+  return make_position_limits_symmetric(mpd, n_joints);
 }
 
-inline bool CheckAllMirrorable(const std::array<int, kNJoints>& mirroring_logic) {
+inline bool CheckAllMirrorable(const std::vector<int>& mirroring_logic) {
   for (const auto& logic : mirroring_logic) {
     if (logic != 1 && logic != -1) {
       return false;
@@ -170,11 +180,17 @@ class FAOC {
   static_assert(KJointStateDim >= 2, "The joint space dimensionality of FAOC must be at least 2");
 
  public:
+  // ZState is used for abstract actions (n_joints x abstract_set_dim)
+  using ZState =
+    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor, Eigen::Dynamic, kMaxAbstractSetDim>;
+  // AbstractRow is used for storing the abstract action of 1 joint (1 x abstract_set_dim)
   using AbstractRow = Eigen::Matrix<double, 1, Eigen::Dynamic, Eigen::RowMajor, 1, kMaxAbstractSetDim>;
-  // Despite possibly redundant, differentiating between the three types of states is useful for reading the code
-  using ZState = Eigen::Matrix<double, kNJoints, Eigen::Dynamic, Eigen::RowMajor, kNJoints, kMaxAbstractSetDim>;
-  using XState = Eigen::Matrix<double, kNJoints, KJointStateDim, Eigen::RowMajor>;  // Robot state in the joint set
-  using XAction = Eigen::Matrix<double, kNJoints, Eigen::Dynamic, Eigen::RowMajor, kNJoints, kMaxAbstractSetDim>;
+  // XAction is used for storing the abstract action of all joints after the mapping (n_joints x abstract_set_dim)
+  using XAction =
+    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor, Eigen::Dynamic, kMaxAbstractSetDim>;
+  // XState is used for the robot state in the joint space (n_joints x KJointStateDim)
+  using XState =
+    Eigen::Matrix<double, Eigen::Dynamic, KJointStateDim, Eigen::RowMajor>;  // Robot state in the joint set
 
   enum class MapToAbstractFailureCodes : int {
     kNotInit = -7,
@@ -185,23 +201,34 @@ class FAOC {
   bool zero_tolerance_setting;
 
   /// @brief FAOC class constructor for general robots.
-  FAOC(std::string faoc_type, const double tau_c, const int n_l, const uint sampling_freq, const int abstract_set_dim,
-       const double max_path_time, JointData joint_data, MPOnlineSettings online_settings)
+  FAOC(std::string faoc_type, const int n_joints, const double tau_c, const int n_l, const uint sampling_freq,
+       const int abstract_set_dim, const double max_path_time, JointData joint_data, MPOnlineSettings online_settings)
     : f_s_(sampling_freq),
       tau_s_(1.0 / static_cast<double>(sampling_freq)),
       tau_c_(tau_c),
       n_l_(n_l),
+      n_joints_(n_joints),
       abstract_set_dim_(abstract_set_dim),
       max_p_time_(max_path_time),
       hard_online_mode_(online_settings.hard_online),
       max_opt_cycles_(static_cast<uint32_t>(floor(online_settings.max_opt_time * static_cast<double>(f_s_)))),
       max_opt_time_(static_cast<double>(max_opt_cycles_) / static_cast<double>(f_s_)),
       max_buffered_opt_time_(online_settings.max_opt_time - online_settings.opt_buffer_time),
-      pos_range_correction_(set_robot_limits(mpd_, joint_data)),
+      pos_range_correction_(n_joints),
       time_axis_(ComputeTimeAxis()),
       faoc_type_(std::move(faoc_type)),
       mirroring_available_(CheckAllMirrorable(joint_data.mirroring_logic)),
       mirroring_symmetry_(joint_data.mirroring_logic) {
+    if (n_joints_ <= 0) {
+      throw std::runtime_error("The number of joints must be at least one");
+    }
+    if (joint_data.mirroring_logic.size() != static_cast<size_t>(n_joints_)) {
+      throw std::runtime_error(ErrorFormatter() << "JointData size (" << joint_data.mirroring_logic.size()
+                                                << ") does not match n_joints (" << n_joints_ << ")");
+    }
+    mpd_.resize(n_joints_);
+    pos_range_correction_ = set_robot_limits(mpd_.data(), joint_data, n_joints_);
+
     FAOCInit();
   }
 
@@ -225,18 +252,22 @@ class FAOC {
   /// @brief Sets the gain of the velocity limits (must be larger than 0) used as constraints in the optimization.
   /// @param v_gain A n_joints-length array containing gain coefficients for the joint-wise velocity limits.
   /// @return Success or failure code
-  int SetVelocityLimitGain(const std::array<double, kNJoints>& v_gain) {
+  int SetVelocityLimitGain(const Eigen::VectorXd& v_gain) {
     if (solver_initialized_) {
       LOG(ERROR) << "This function is not allowed after the solver has been initialized";
       return EXIT_FAILURE;
     }
-    for (auto i = 0U; i < kNJoints; ++i) {
+    if (v_gain.size() != n_joints_) {
+      LOG(ERROR) << "Velocity gain vector must have size " << n_joints_ << " but got " << v_gain.size();
+      return EXIT_FAILURE;
+    }
+    for (int i = 0; i < n_joints_; ++i) {
       if (v_gain[i] <= 0) {
         LOG(ERROR) << "Invalid gain " << v_gain[i] << " for axis " << i + 1 << ". The gain values must be > 0";
         return EXIT_FAILURE;
       }
     }
-    for (auto i = 0U; i < kNJoints; ++i) {
+    for (int i = 0; i < n_joints_; ++i) {
       mpd_[i].joint_lims.qdotup *= v_gain[i];
     }
     return EXIT_SUCCESS;
@@ -245,18 +276,22 @@ class FAOC {
   /// @brief Sets the gain of the acceleration limits (must be larger than 0) used as constraints in the optimization.
   /// @param a_gain A n_joints-length array containing gain coefficients for the joint-wise acceleration limits.
   /// @return Success or failure code
-  int SetAccelerationLimitGain(const std::array<double, kNJoints>& a_gain) {
+  int SetAccelerationLimitGain(const Eigen::VectorXd& a_gain) {
     if (solver_initialized_) {
       LOG(ERROR) << "This function is not allowed after the solver has been initialized";
       return EXIT_FAILURE;
     }
-    for (auto i = 0U; i < kNJoints; ++i) {
+    if (a_gain.size() != n_joints_) {
+      LOG(ERROR) << "Acceleration gain vector must have size " << n_joints_ << " but got " << a_gain.size();
+      return EXIT_FAILURE;
+    }
+    for (int i = 0; i < n_joints_; ++i) {
       if (a_gain[i] <= 0) {
         LOG(ERROR) << "Invalid gain " << a_gain[i] << " for axis " << i + 1 << ". The gain values must be > 0";
         return EXIT_FAILURE;
       }
     }
-    for (auto i = 0U; i < kNJoints; ++i) {
+    for (int i = 0; i < n_joints_; ++i) {
       mpd_[i].joint_lims.qddotup *= a_gain[i];
     }
     return EXIT_SUCCESS;
@@ -265,18 +300,22 @@ class FAOC {
   /// @brief Sets the gain of the jerk limits (must be larger than 0) used as constraints in the optimization.
   /// @param a_gain A n_joints-length array containing gain coefficients for the joint-wise jerk limits.
   /// @return Success or failure code
-  int SetJerkLimitGain(const std::array<double, kNJoints>& j_gain) {
+  int SetJerkLimitGain(const Eigen::VectorXd& j_gain) {
     if (solver_initialized_) {
       LOG(ERROR) << "This function is not allowed after the solver has been initialized";
       return EXIT_FAILURE;
     }
-    for (auto i = 0U; i < kNJoints; ++i) {
+    if (j_gain.size() != n_joints_) {
+      LOG(ERROR) << "Jerk gain vector must have size " << n_joints_ << " but got " << j_gain.size();
+      return EXIT_FAILURE;
+    }
+    for (int i = 0; i < n_joints_; ++i) {
       if (j_gain[i] <= 0) {
         LOG(ERROR) << "Invalid gain " << j_gain[i] << " for axis " << i + 1 << ". The gain values must be > 0";
         return EXIT_FAILURE;
       }
     }
-    for (auto i = 0U; i < kNJoints; ++i) {
+    for (int i = 0; i < n_joints_; ++i) {
       mpd_[i].joint_lims.qdddotup *= j_gain[i];
     }
     return EXIT_SUCCESS;
@@ -287,18 +326,23 @@ class FAOC {
   /// @param v_tol: A n_joints-length array containing the velocity tolerances in meters or radians per second (assumed
   /// symmetric)
   /// @return Success or failure code
-  int SetTolerances(const std::array<double, kNJoints>& p_tol, const std::array<double, kNJoints>& v_tol) {
+  int SetTolerances(const Eigen::VectorXd& p_tol, const Eigen::VectorXd& v_tol) {
     if (solver_initialized_) {
       LOG(ERROR) << "This function is not allowed after the solver has been initialized";
       return EXIT_FAILURE;
     }
-    for (auto i = 0U; i < kNJoints; ++i) {
+    if (p_tol.size() != n_joints_ || v_tol.size() != n_joints_) {
+      LOG(ERROR) << "Tolerance vectors must have size " << n_joints_ << " but got p_tol=" << p_tol.size()
+                 << " and v_tol=" << v_tol.size();
+      return EXIT_FAILURE;
+    }
+    for (int i = 0; i < n_joints_; ++i) {
       if (p_tol[i] < 0 || v_tol[i] < 0) {
         LOG(ERROR) << "The tolerances cannot be negative!";
         return EXIT_FAILURE;
       }
     }
-    for (auto i = 0U; i < kNJoints; ++i) {
+    for (int i = 0; i < n_joints_; ++i) {
       mpd_[i].term_state_devs.delta_qup = p_tol[i];
       mpd_[i].term_state_devs.delta_qlow = -p_tol[i];
       mpd_[i].term_state_devs.delta_qdotup = v_tol[i];
@@ -320,13 +364,11 @@ class FAOC {
       return EXIT_FAILURE;
     }
 
-    // Load motion planner data. This will return a kNJoints-length mpd_ array!
     const double ret = CallInitAPI(obj_func, n_threads);
-    solver_initialized_ = true;
 
     // Health check and get scaling matrices
     sol_size_ = mpd_[0].N;
-    for (auto i = 0U; i < kNJoints; ++i) {
+    for (int i = 0; i < n_joints_; ++i) {
       if (mpd_[i].N != sol_size_) {
         throw std::runtime_error(ErrorFormatter()
                                  << "Joint " << i + 1 << " has size " << mpd_[i].N << " but expected " << sol_size_);
@@ -339,14 +381,21 @@ class FAOC {
       throw std::runtime_error(ErrorFormatter()
                                << "Initialization failed with return code " << static_cast<int>(ret) << ".");
     }
+    solver_initialized_ = true;
     LOG(INFO) << "Initialization of motion planning problem took " << ret * 1e6 << "us.";
     Reset();
     return EXIT_SUCCESS;
   }
 
-  int InitializeResetPlanner(Eigen::Vector<double, kNJoints> p_reset_low, Eigen::Vector<double, kNJoints> p_reset_up,
-                             const int mult = 2, const int add_steps = 3, const int n_threads = 1,
-                             const int max_n_l = 200, const bool reset_sync = false) {
+  int InitializeResetPlanner(Eigen::VectorXd p_reset_low, Eigen::VectorXd p_reset_up, const int mult = 2,
+                             const int add_steps = 3, const int n_threads = 1, const int max_n_l = 200,
+                             const bool reset_sync = false) {
+    if (p_reset_low.size() != n_joints_ || p_reset_up.size() != n_joints_) {
+      LOG(ERROR) << "Reset limits must have size " << n_joints_ << " but got p_reset_low=" << p_reset_low.size()
+                 << " and p_reset_up=" << p_reset_up.size();
+      return EXIT_FAILURE;
+    }
+
     if (!solver_initialized_) {
       LOG(ERROR) << "Initialize the main FAOC solver first!";
       return EXIT_FAILURE;
@@ -366,7 +415,7 @@ class FAOC {
       return EXIT_FAILURE;
     }
     // Check consistency with defined limits
-    for (auto i = 0U; i < kNJoints; ++i) {
+    for (int i = 0; i < n_joints_; ++i) {
       if (p_reset_low(i) < mpd_[i].joint_lims.qlow) {
         LOG(ERROR) << "Lower reset position limit for joint " << i + 1 << " exceeds the minimum position limit";
         return EXIT_FAILURE;
@@ -377,9 +426,9 @@ class FAOC {
       }
     }
 
-    reset_state_low_ = XState::Zero();
+    reset_state_low_ = XState::Zero(n_joints_, KJointStateDim);
     reset_state_low_.col(0) = p_reset_low;
-    reset_state_high_ = XState::Zero();
+    reset_state_high_ = XState::Zero(n_joints_, KJointStateDim);
     reset_state_high_.col(0) = p_reset_up;
 
     double init_time;
@@ -397,7 +446,7 @@ class FAOC {
   /// @brief MPC class destructor
   ~FAOC() {
     if (solver_initialized_) {
-      freeData(mpd_, kNJoints);
+      freeData(mpd_.data(), n_joints_);
     }
   }
 
@@ -409,15 +458,15 @@ class FAOC {
     }
 
     const std::scoped_lock lock(mutex_);
-    for (auto i = 0U; i < kNJoints; ++i) {
+    for (int i = 0; i < n_joints_; ++i) {
       u_complete_[i].resize(0);
       du_complete_[i].resize(0);
       ddu_complete_[i].resize(0);
     }
-    get<0>(reset_plan_).resize(0, kNJoints);
-    get<1>(reset_plan_).resize(0, kNJoints);
-    get<2>(reset_plan_).resize(0, kNJoints);
-    get<3>(reset_plan_).resize(0, kNJoints);
+    get<0>(reset_plan_).resize(0, n_joints_);
+    get<1>(reset_plan_).resize(0, n_joints_);
+    get<2>(reset_plan_).resize(0, n_joints_);
+    get<3>(reset_plan_).resize(0, n_joints_);
 
     CleanLastSolution();
 
@@ -444,14 +493,18 @@ class FAOC {
     x_0.col(0) -= pos_range_correction_;
 
     const std::scoped_lock lock(mutex_);
-    for (auto i = 0U; i < kNJoints; ++i) {
+    if (x_0.rows() != n_joints_) {
+      LOG(ERROR) << "Initial state must have " << n_joints_ << " rows but got " << x_0.rows();
+      return EXIT_FAILURE;
+    }
+    for (int i = 0; i < n_joints_; ++i) {
       Eigen::Map<Eigen::RowVectorXd>(&mpd_[i].x_0[0], 1, x_0.cols()) = x_0.row(i);
       for (auto j = 0U; j < KJointStateDim; ++j) {
         mpd_[i].x_0[j] *= scaling_x_state_[i][j];
       }
     }
     UpdateInitialStateCallback();
-    for (auto i = 0U; i < kNJoints; ++i) {
+    for (int i = 0; i < n_joints_; ++i) {
       if (!CallInvariantSetCheckAPI(i)) {
         LOG(ERROR) << "Initial state is not inside the maximum control invariant set (joint " << i << ")!";
         return static_cast<int>(MapToAbstractFailureCodes::kNotInsideControlInvariantSet);
@@ -460,24 +513,28 @@ class FAOC {
 
     // Action polytope needs to be recomputed for the new state
     initial_state_defined_ = true;
-    std::ranges::fill(action_set_computed_, false);
+    std::fill(action_set_computed_.begin(), action_set_computed_.end(), false);
     return EXIT_SUCCESS;
   }
 
   /// @brief Checks if a state is in the maximum controlled invariant set
   /// @param x_0 The initial joint state. Should be a matrix of size NxX, where N is the number of joints and X is the
   /// state dimension
-  /// @return Returns in a vector an integer for each joint, 0 if x_0 for the joint is in max controlled invariant set,
-  /// 1 otherwise
-  Eigen::Vector<int, kNJoints> CheckStateInInvariantSet(XState x_0) {
+  /// @return Returns <status_code, vector>. Status is EXIT_SUCCESS on success, otherwise a failure code. The vector
+  /// contains one integer per joint: 0 if inside the max controlled invariant set, 1 otherwise.
+  std::pair<int, Eigen::VectorXi> CheckStateInInvariantSet(XState x_0) {
+    if (x_0.rows() != n_joints_) {
+      LOG(ERROR) << "State must have " << n_joints_ << " rows but got " << x_0.rows();
+      return {static_cast<int>(MapToAbstractFailureCodes::kActionSetComputationError), Eigen::VectorXi::Zero(0)};
+    }
     x_0.col(0) -= pos_range_correction_;
-    Eigen::Vector<int, kNJoints> result;
+    Eigen::VectorXi result(n_joints_);
     // Check that each joint is in max controlled invariant set
-    for (auto i = 0U; i < kNJoints; ++i) {
+    for (int i = 0; i < n_joints_; ++i) {
       x_0.row(i).array() *= scaling_x_state_[i].array();  // Normalize the state
       result[i] = CallInvariantSetCheckExternalAPI(i, x_0.row(i));
     }
-    return result;
+    return {EXIT_SUCCESS, result};
   }
 
   std::pair<int, Eigen::VectorXd> GetUniqueCentroid(int joint_i) {
@@ -493,7 +550,7 @@ class FAOC {
       LOG(ERROR) << "Mirroring not available for the general API of FAOC";
       return Eigen::MatrixXd::Zero(0, 0);
     }
-    for (auto i = 0U; i < kNJoints; ++i) {
+    for (int i = 0; i < n_joints_; ++i) {
       for (int j = 0; j < joint_state.cols(); ++j) {
         joint_state(i, j) *= mirroring_symmetry_[i];
       }
@@ -524,8 +581,8 @@ class FAOC {
       LOG(ERROR) << kSolverCodeMap.at(SolveReturnCodes::kNotInit);
       return static_cast<int>(SolveReturnCodes::kNotInit);
     }
-    if (z_action.rows() != kNJoints || z_action.cols() != abstract_set_dim_) {
-      LOG(ERROR) << "Abstract action must be of size " << kNJoints << "x" << abstract_set_dim_ << " but got "
+    if (z_action.rows() != n_joints_ || z_action.cols() != abstract_set_dim_) {
+      LOG(ERROR) << "Abstract action must be of size " << n_joints_ << "x" << abstract_set_dim_ << " but got "
                  << z_action.rows() << "x" << z_action.cols();
       return static_cast<int>(SolveReturnCodes::kBadAction);
     }
@@ -538,7 +595,7 @@ class FAOC {
       }
     }
     // Set action
-    for (auto i = 0U; i < kNJoints; ++i) {
+    for (int i = 0; i < n_joints_; ++i) {
       Eigen::Map<Eigen::RowVectorXd>(&mpd_[i].mapd->z_N_l[0], 1, z_action.cols()) = z_action.row(i);
     }
     z_n_l_ph_ = z_action;
@@ -558,15 +615,15 @@ class FAOC {
       LOG(ERROR) << "Initial state is not defined!";
       return std::pair<int, ZState>(static_cast<int>(MapToAbstractFailureCodes::kNotInit), z_zero_state_ph_);
     }
-    if (x_action.rows() != kNJoints || x_action.cols() != abstract_set_dim_) {
-      LOG(ERROR) << "Joint action must be of size " << kNJoints << "x" << abstract_set_dim_ << " but got "
+    if (x_action.rows() != n_joints_ || x_action.cols() != abstract_set_dim_) {
+      LOG(ERROR) << "Joint action must be of size " << n_joints_ << "x" << abstract_set_dim_ << " but got "
                  << x_action.rows() << "x" << x_action.cols();
       return std::pair<int, ZState>(static_cast<int>(SolveReturnCodes::kBadAction), z_zero_state_ph_);
     }
 
     x_action.col(0) -= pos_range_correction_;
 
-    for (auto i = 0U; i < kNJoints; ++i) {
+    for (int i = 0; i < n_joints_; ++i) {
       if (!CallInvariantSetCheckAPI(i)) {
         LOG(ERROR) << "Initial state is not inside the maximum control invariant set (joint " << i << ")!";
         return std::pair<int, ZState>(static_cast<int>(MapToAbstractFailureCodes::kNotInsideControlInvariantSet),
@@ -590,7 +647,12 @@ class FAOC {
     return z_res;
   }
 
-  int ComputeResetTrajectory(XState current_state, Eigen::Vector<double, kNJoints> reset_pos) {
+  int ComputeResetTrajectory(XState current_state, Eigen::VectorXd reset_pos) {
+    if (current_state.rows() != n_joints_ || reset_pos.size() != n_joints_) {
+      LOG(ERROR) << "Reset inputs must have " << n_joints_ << " joints";
+      return EXIT_FAILURE;
+    }
+
     if (!reset_planner_initialized_) {
       LOG(ERROR) << "Reset planner is not initialized";
       return EXIT_FAILURE;
@@ -622,7 +684,7 @@ class FAOC {
     }
   }
 
-  [[nodiscard]] uint8_t GetNJoints() const { return kNJoints; }
+  [[nodiscard]] int GetNJoints() const { return n_joints_; }
   [[nodiscard]] double GetSamplingPeriod() const { return tau_s_; }
   [[nodiscard]] uint32_t GetMaxOptCycles() const { return max_opt_cycles_; }
   [[nodiscard]] uint32_t GetFusionIndex() const { return split_idx_; }
@@ -658,7 +720,7 @@ class FAOC {
 
   // These getters are only for unit-testing purposes
   [[nodiscard]] XState GetCurrentState() {
-    for (auto i = 0U; i < kNJoints; ++i) {
+    for (int i = 0; i < n_joints_; ++i) {
       x_ph_.row(i) = Eigen::Map<Eigen::VectorXd>(&mpd_[i].x_0[0], KJointStateDim);
       x_ph_.row(i).array() /= scaling_x_state_[i].array();
     }
@@ -686,38 +748,34 @@ class FAOC {
     return CallInvariantSetScaledGetAPI(joint_i);
   }
 
-  [[nodiscard]] Eigen::Matrix<double, kNJoints, 2> GetPositionLimits() {
-    Eigen::Matrix<double, kNJoints, 2> result;
-    for (auto i = 0U; i < kNJoints; ++i) {
+  [[nodiscard]] Eigen::MatrixXd GetPositionLimits() {
+    Eigen::MatrixXd result(n_joints_, 2);
+    for (int i = 0; i < n_joints_; ++i) {
       result(i, 0) = mpd_[i].joint_lims.qlow;
       result(i, 1) = mpd_[i].joint_lims.qup;
     }
     return result;
   }
 
-  [[nodiscard]] Eigen::Matrix<double, kNJoints, 1> GetVelocityLimits() {
-    Eigen::Matrix<double, kNJoints, 1> result;
-    for (auto i = 0U; i < kNJoints; ++i) {
+  [[nodiscard]] Eigen::VectorXd GetVelocityLimits() {
+    Eigen::VectorXd result(n_joints_);
+    for (int i = 0; i < n_joints_; ++i) {
       result(i, 0) = mpd_[i].joint_lims.qdotup;
     }
     return result;
   }
 
-  [[nodiscard]] Eigen::Matrix<double, kNJoints, 1> GetAccelerationLimits() {
-    Eigen::Matrix<double, kNJoints, 1> result;
-    for (auto i = 0U; i < kNJoints; ++i) {
+  [[nodiscard]] Eigen::VectorXd GetAccelerationLimits() {
+    Eigen::VectorXd result(n_joints_);
+    for (int i = 0; i < n_joints_; ++i) {
       result(i, 0) = mpd_[i].joint_lims.qddotup;
     }
     return result;
   }
 
-  [[nodiscard]] virtual Eigen::Matrix<double, kNJoints, 1> GetReducedPositionLimits() {
-    throw std::runtime_error("Not implemented");
-  }
+  [[nodiscard]] virtual Eigen::VectorXd GetReducedPositionLimits() { throw std::runtime_error("Not implemented"); }
 
-  [[nodiscard]] virtual Eigen::Matrix<double, kNJoints, 1> GetReducedVelocityLimits() {
-    throw std::runtime_error("Not implemented");
-  }
+  [[nodiscard]] virtual Eigen::VectorXd GetReducedVelocityLimits() { throw std::runtime_error("Not implemented"); }
 
   [[nodiscard]] std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> GetResetPlan() {
     return reset_plan_;
@@ -732,28 +790,28 @@ class FAOC {
       return EXIT_FAILURE;
     }
     const std::scoped_lock lock(mutex_);
-    for (auto i = 0U; i < kNJoints; ++i) {
+    for (int i = 0; i < n_joints_; ++i) {
       do {
         getRandomInitialState(&mpd_[i]);
       } while (!CallInvariantSetCheckAPI(i));
     }
 
     UpdateInitialStateCallback();
-    std::ranges::fill(action_set_computed_, false);
+    std::fill(action_set_computed_.begin(), action_set_computed_.end(), false);
     initial_state_defined_ = true;
     return EXIT_SUCCESS;
   }
 
   void SetRandomAction() {
     // Sample a random action
-    for (auto i = 0U; i < kNJoints; ++i) {
+    for (int i = 0; i < n_joints_; ++i) {
       getRandomAbstractAction(&mpd_[i]);
       z_n_l_ph_.row(i) = Eigen::VectorXd::Map(&mpd_[i].mapd->z_N_l[0], abstract_set_dim_);
     }
   }
 
   int MapFromAbstractSet() {
-    for (auto i = 0U; i < kNJoints; ++i) {
+    for (int i = 0; i < n_joints_; ++i) {
       if (!CallInvariantSetCheckAPI(i)) {
         LOG(ERROR) << "Initial state is not inside the maximum control invariant set (joint " << i << ")!";
         return static_cast<int>(MapToAbstractFailureCodes::kNotInsideControlInvariantSet);
@@ -805,7 +863,7 @@ class FAOC {
 
     // Recurse initial state
     // We use x_N_l since the terminal position and speed might have changed due to allowed deviations
-    for (auto i = 0U; i < kNJoints; ++i) {
+    for (int i = 0; i < n_joints_; ++i) {
       for (auto j = 0U; j < KJointStateDim; ++j) {
         mpd_[i].x_0[j] = mpd_[i].x_N_l[j];
       }
@@ -814,7 +872,7 @@ class FAOC {
     }
     x_n_l_actual_ph_.col(0) += pos_range_correction_;
     RecurseInitialStateCallback();
-    std::ranges::fill(action_set_computed_, false);
+    std::fill(action_set_computed_.begin(), action_set_computed_.end(), false);
 
     return EXIT_SUCCESS;
   }
@@ -824,6 +882,7 @@ class FAOC {
   const double tau_s_;          // Robot sampling time [s]
   const double tau_c_;          // length of single spline interval [s]
   const int n_l_;               // number of intervals within the spline
+  const int n_joints_;          // Number of robot joints
   const int abstract_set_dim_;  // Dimensionality of the abstract action set (per each joint)
   const double max_p_time_;     // maximum length of the plan [s]
 
@@ -836,7 +895,7 @@ class FAOC {
   const double max_buffered_opt_time_;
 
   // Position limit correction factor (to make FAOC deal with only symmetric limits)
-  const Eigen::Vector<double, kNJoints> pos_range_correction_;
+  Eigen::VectorXd pos_range_correction_;
 
   // Solution size (in samples, per each joint). Should be constant for all episodes and steps
   int sol_size_;
@@ -850,15 +909,15 @@ class FAOC {
   const Eigen::VectorXd time_axis_;
 
   // Last problem solutions for U, dU/dt, ddU/dt**2
-  std::array<Eigen::VectorXd, kNJoints> u_eigen_;
-  std::array<Eigen::VectorXd, kNJoints> du_eigen_;
-  std::array<Eigen::VectorXd, kNJoints> ddu_eigen_;
-  std::array<Eigen::VectorXd, kNJoints> dddu_eigen_;
+  std::vector<Eigen::VectorXd> u_eigen_;
+  std::vector<Eigen::VectorXd> du_eigen_;
+  std::vector<Eigen::VectorXd> ddu_eigen_;
+  std::vector<Eigen::VectorXd> dddu_eigen_;
 
   // Overall solutions for U, dU/dt, ddU/dt**2
-  std::array<Eigen::VectorXd, kNJoints> u_complete_;
-  std::array<Eigen::VectorXd, kNJoints> du_complete_;
-  std::array<Eigen::VectorXd, kNJoints> ddu_complete_;
+  std::vector<Eigen::VectorXd> u_complete_;
+  std::vector<Eigen::VectorXd> du_complete_;
+  std::vector<Eigen::VectorXd> ddu_complete_;
 
   // Index where the latest solution starts within the complete solution
   uint32_t split_idx_;
@@ -868,23 +927,23 @@ class FAOC {
   bool initial_state_defined_;
   bool solution_available_;
   bool reset_planner_initialized_;
-  std::array<bool, kNJoints> action_set_computed_;
+  std::vector<bool> action_set_computed_;
 
   // Protected placeholders
   XAction y_n_l_ph_;
-  XState x_n_l_actual_ph_ = XState::Zero();
+  XState x_n_l_actual_ph_;
   ZState z_zero_state_ph_;
 
   // Reset planner position limits (in row-major order for easy conversion to the expected reset planner format)
-  Eigen::Matrix<double, kNJoints, KJointStateDim, Eigen::RowMajor> reset_state_low_;
-  Eigen::Matrix<double, kNJoints, KJointStateDim, Eigen::RowMajor> reset_state_high_;
+  Eigen::Matrix<double, Eigen::Dynamic, KJointStateDim, Eigen::RowMajor> reset_state_low_;
+  Eigen::Matrix<double, Eigen::Dynamic, KJointStateDim, Eigen::RowMajor> reset_state_high_;
 
-  mpdata mpd_[kNJoints];
+  std::vector<mpdata> mpd_;
 
   // Joint state scaling mat for y_n_l_ph_
-  std::array<AbstractRow, kNJoints> scaling_action_;
+  std::vector<AbstractRow> scaling_action_;
   // Joint state scaling mat for x_n_l_actual_ph_
-  std::array<Eigen::Matrix<double, 1, KJointStateDim>, kNJoints> scaling_x_state_;
+  std::vector<Eigen::Matrix<double, 1, KJointStateDim>> scaling_x_state_;
 
   // Reset plan
   std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> reset_plan_;
@@ -911,7 +970,7 @@ class FAOC {
     {SolveReturnCodes::kSuccess, "Successful"}};
 
   void CleanLastSolution() {
-    for (auto i = 0U; i < kNJoints; ++i) {
+    for (int i = 0; i < n_joints_; ++i) {
       u_eigen_[i] = Eigen::VectorXd::Zero(0);
       du_eigen_[i] = Eigen::VectorXd::Zero(0);
       ddu_eigen_[i] = Eigen::VectorXd::Zero(0);
@@ -920,7 +979,7 @@ class FAOC {
   }
 
   int SolutionUpdate() {
-    for (auto i = 0U; i < kNJoints; ++i) {
+    for (int i = 0; i < n_joints_; ++i) {
       // We don't include the first index of u_zoh since it corresponds to the initial state
       u_eigen_[i] = Eigen::Map<Eigen::VectorXd>(&mpd_[i].u_zoh[0] + 1, sol_size_);
       u_eigen_[i].array() += pos_range_correction_(i);
@@ -961,7 +1020,7 @@ class FAOC {
   // 1 indicates that the joint does not need to be mirrored
   // -1 indicates that the joint needs to be mirrored by flipping its sign
   // 0 indicates that the joint is not symmetric
-  const std::array<int, kNJoints> mirroring_symmetry_;
+  const std::vector<int> mirroring_symmetry_;
 
   // Placeholders
   XState x_ph_;
@@ -989,7 +1048,7 @@ class FAOC {
   virtual int CallResetPlanInitAPI(const int, const int, const int, const int, const bool, double*) {
     throw std::runtime_error("Not implemented");
   }
-  virtual int CallResetPlanAPI(XState, Eigen::Vector<double, kNJoints>) { throw std::runtime_error("Not implemented"); }
+  virtual int CallResetPlanAPI(XState, Eigen::VectorXd) { throw std::runtime_error("Not implemented"); }
 
   [[nodiscard]] Eigen::VectorXd ComputeTimeAxis() const {
     // Generate a linspace vector
@@ -999,12 +1058,30 @@ class FAOC {
   }
 
   void InitializeAbstractStorage() {
-    y_n_l_ph_.resize(kNJoints, abstract_set_dim_);
+    y_n_l_ph_.resize(n_joints_, abstract_set_dim_);
     y_n_l_ph_.setZero();
-    z_zero_state_ph_.resize(kNJoints, abstract_set_dim_);
+    z_zero_state_ph_.resize(n_joints_, abstract_set_dim_);
     z_zero_state_ph_.setZero();
-    z_n_l_ph_.resize(kNJoints, abstract_set_dim_);
+    z_n_l_ph_.resize(n_joints_, abstract_set_dim_);
     z_n_l_ph_.setZero();
+
+    scaling_action_.resize(n_joints_);
+    scaling_x_state_.resize(n_joints_);
+    action_set_computed_.assign(n_joints_, false);
+    u_eigen_.resize(n_joints_);
+    du_eigen_.resize(n_joints_);
+    ddu_eigen_.resize(n_joints_);
+    dddu_eigen_.resize(n_joints_);
+    u_complete_.resize(n_joints_);
+    du_complete_.resize(n_joints_);
+    ddu_complete_.resize(n_joints_);
+    reset_state_low_.resize(n_joints_, KJointStateDim);
+    reset_state_high_.resize(n_joints_, KJointStateDim);
+    x_n_l_actual_ph_.resize(n_joints_, KJointStateDim);
+    x_n_l_actual_ph_.setZero();
+    x_ph_.resize(n_joints_, KJointStateDim);
+    x_ph_.setZero();
+
     for (auto& scaling_action_i : scaling_action_) {
       scaling_action_i.resize(1, abstract_set_dim_);
       scaling_action_i.setZero();

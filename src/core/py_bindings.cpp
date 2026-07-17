@@ -15,9 +15,8 @@ PYBIND11_MODULE(faoc, m) {
     .def_readwrite("hard_online_mode", &MPOnlineSettings::hard_online)
     .def_readwrite("opt_buffer", &MPOnlineSettings::opt_buffer_time);
   py::class_<JointData>(m, "JointData")
-    .def(py::init<const std::array<int, kNJoints> &, const std::array<double, kNJoints> &,
-                  const std::array<double, kNJoints> &, const std::array<double, kNJoints> &,
-                  const std::array<double, kNJoints> &, const std::array<double, kNJoints> &>(),
+    .def(py::init<const std::vector<int> &, const std::vector<double> &, const std::vector<double> &,
+                  const std::vector<double> &, const std::vector<double> &, const std::vector<double> &>(),
          py::arg("joint_mirroring"), py::arg("joint_pos_min"), py::arg("joint_pos_max"), py::arg("joint_vel_max"),
          py::arg("joint_acc_max"), py::arg("joint_jerk_max"))
     .def_readonly("mirroring_logic", &JointData::mirroring_logic)
@@ -31,8 +30,9 @@ PYBIND11_MODULE(faoc, m) {
     .value("difference", obj_t::DIFF)
     .value("mixed", obj_t::MIXED);
   py::class_<FAOCCubicApprox, std::unique_ptr<FAOCCubicApprox>>(m, "CubicSpline")
-    .def(py::init<double, int, uint, JointData, MPOnlineSettings, int>(), py::arg("tau_c"), py::arg("n_l"),
-         py::arg("sampling_freq"), py::arg("joint_data"), py::arg("online_settings"), py::arg("abstract_set_dim"))
+    .def(py::init<double, int, uint, int, JointData, MPOnlineSettings, int>(), py::arg("tau_c"), py::arg("n_l"),
+         py::arg("sampling_freq"), py::arg("n_joints"), py::arg("joint_data"), py::arg("online_settings"),
+         py::arg("abstract_set_dim"))
     .def("initialize", &FAOCCubicApprox::Initialize, py::arg("obj_func"), py::arg("n_threads") = 1)
     .def("initialize_reset_planner", &FAOCCubicApprox::InitializeResetPlanner, py::arg("p_reset_low"),
          py::arg("p_reset_up"), py::arg("mult") = 2, py::arg("add_steps") = 0, py::arg("n_threads") = 1,

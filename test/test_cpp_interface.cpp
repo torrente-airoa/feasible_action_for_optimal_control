@@ -19,11 +19,11 @@ TEST(PolynomialMPCMusashiFAOC, TestAllXYMusashiFAOCScenarios) {
   return;
   const float tau_c = 0.008;
   const int n_l = 4;
+  const int n_joints = static_cast<int>(GetJointData().mirroring_logic.size());
   const auto mpc_ptr =
-    std::make_unique<FAOCCubicApprox>(tau_c, n_l, 1000, GetJointData(), MPOnlineSettings(0.001, false), 2);
+    std::make_unique<FAOCCubicApprox>(tau_c, n_l, 1000, n_joints, GetJointData(), MPOnlineSettings(0.001, false), 2);
 
-  std::array<double, 8> zero_tol;
-  zero_tol.fill(0);
+  Eigen::VectorXd zero_tol = Eigen::VectorXd::Zero(n_joints);
 
   mpc_ptr->SetTolerances(zero_tol, zero_tol);
   mpc_ptr->Initialize(obj_t::MAGN);
@@ -69,11 +69,11 @@ TEST(PolynomialMPCMusashiFAOC, TestInverseMapXYMusashiFAOC) {
   return;
   const float tau_c = 0.008;
   const int n_l = 4;
+  const int n_joints = static_cast<int>(GetJointData().mirroring_logic.size());
   const auto mpc_ptr =
-    std::make_unique<FAOCCubicApprox>(tau_c, n_l, 1000, GetJointData(), MPOnlineSettings(0.001, false), 2);
+    std::make_unique<FAOCCubicApprox>(tau_c, n_l, 1000, n_joints, GetJointData(), MPOnlineSettings(0.001, false), 2);
 
-  std::array<double, 8> zero_tol;
-  zero_tol.fill(0);
+  Eigen::VectorXd zero_tol = Eigen::VectorXd::Zero(n_joints);
 
   mpc_ptr->SetTolerances(zero_tol, zero_tol);
   mpc_ptr->Initialize(obj_t::MAGN);
@@ -141,21 +141,21 @@ TEST(PolynomialMPCMusashiFAOC, TestInverseMapXYMusashiFAOC) {
 TEST(PolynomialMPCMusashiFAOC, TestResetPlan) {
   const float tau_c = 0.008;
   const int n_l = 4;
+  const int n_joints = static_cast<int>(GetJointData().mirroring_logic.size());
   const auto mpc_ptr =
-    std::make_unique<FAOCCubicApprox>(tau_c, n_l, 1000, GetJointData(), MPOnlineSettings(0.001, false), 2);
+    std::make_unique<FAOCCubicApprox>(tau_c, n_l, 1000, n_joints, GetJointData(), MPOnlineSettings(0.001, false), 2);
 
-  std::array<double, 8> lims;
-  lims.fill(0.7);
+  Eigen::VectorXd lims = Eigen::VectorXd::Constant(n_joints, 0.7);
   mpc_ptr->SetVelocityLimitGain(lims);
   mpc_ptr->SetAccelerationLimitGain(lims);
 
-  Eigen::Matrix<double, 8, 1> x_final;
+  Eigen::VectorXd x_final(n_joints);
   x_final << 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
 
   mpc_ptr->Initialize(obj_t::MAGN);
   mpc_ptr->InitializeResetPlanner(x_final, x_final);
 
-  FAOCCubicApprox::XState x_current;
+  FAOCCubicApprox::XState x_current(n_joints, 3);
   x_current << 0.40867014202263113, 0.0008075326262929252, -0.6568272531326045, -0.2571675539571125,
     -0.5027792092793294, -0.5515846624923402, -0.6483328262996743, 0.9150794268435601, 14.170086436554397,
     -0.04202259404325718, 2.447038799997091, 14.725486458097478, -1.7526636154714559, -1.9758415633195014,
@@ -173,7 +173,7 @@ TEST(PolynomialMPCMusashiFAOC, TestResetPlan) {
 
   ASSERT_TRUE(mpc_ptr->ExportResetPlanAsBinary("/tmp/file.bin") == EXIT_SUCCESS);
   ASSERT_TRUE(mpc_ptr->ExportResetPlanAsBinary("/tmp/file.bin") == EXIT_SUCCESS);
-  std::vector<std::array<ResetPlannerExport, 8>> rpd;
+  std::vector<std::vector<ResetPlannerExport>> rpd;
   ASSERT_TRUE(mpc_ptr->ImportResetPlanFromBinary("/tmp/file.bin", rpd) == EXIT_SUCCESS);
 
   // Quick check to verify that the final state is non-zero in position but zero in velocity and acceleration

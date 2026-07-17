@@ -75,6 +75,7 @@ class CubicSpline:
         tau_c: float,
         n_l: int,
         sampling_freq: int,
+        n_joints: int,
         joint_data: JointData,
         online_settings: MPOnlineSettings,
         abstract_set_dim: int,
