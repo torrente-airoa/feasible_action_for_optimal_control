@@ -11,6 +11,20 @@ This implementation, combined with a Reinforcement Learning agent, was used for 
 > [!NOTE]
 > The current implementation supports only Cubic splines and 1- or 2-dimensional action spaces.
 
+## Citing our work
+A preprint is currently available at [arXiv](https://arxiv.org/abs/2607.23930).
+```
+@misc{richter2026bridgingreinforcementlearningoptimal,
+      title={Bridging Reinforcement Learning and Optimal Control via Feasible Action Mapping}, 
+      author={Stefan Richter and Alberto Giammarino and Guillem Torrente and Sam Blakeman and Peter Dürr},
+      year={2026},
+      eprint={2607.23930},
+      archivePrefix={arXiv},
+      primaryClass={eess.SY},
+      url={https://arxiv.org/abs/2607.23930}, 
+}
+```
+
 ## What is FAOC?
 
 FAOC is a control framework that provides a geometrically simple, static action space, which does not represent any physical quantity, which we therefore denote as _abstract_, for controlling a constrained dynamical system with e.g. Reinforcement Learning (RL).
