@@ -325,16 +325,21 @@ class FAOCCubicApprox : public FAOC<kJointSetDim> {
   int CallComputeActionSetAPI(int) { return EXIT_SUCCESS; }
 
   std::pair<Eigen::MatrixXd, Eigen::VectorXd> CallInvariantSetGetAPI(int joint_i) {
-    Eigen::MatrixXd h_a_mat(mpd_[joint_i].n_inf, kJointSetDim);
-    Eigen::VectorXd h_b_mat(mpd_[joint_i].n_inf);
-
-    for (int j = 0; j < mpd_[joint_i].n_inf; ++j) {
-      h_a_mat.row(j) = Eigen::VectorXd::Map(mpd_[joint_i].H_inf[j], kJointSetDim);
-      h_a_mat.row(j).array() *= scaling_x_state_[joint_i].array();
-      h_a_mat(0, j) += pos_range_correction_(joint_i);
-      h_b_mat(j) = mpd_[joint_i].h_inf[j];
+    // The position offset breaks the symmetry of the scaled set, so return the one-sided form {x | A x <= b}
+    const int n_inf = mpd_[joint_i].n_inf;
+    Eigen::MatrixXd h_mat(n_inf, kJointSetDim);
+    Eigen::VectorXd h_vec(n_inf);
+    for (int j = 0; j < n_inf; ++j) {
+      h_mat.row(j) = Eigen::VectorXd::Map(mpd_[joint_i].H_inf[j], kJointSetDim);
+      h_mat.row(j).array() *= scaling_x_state_[joint_i].array();
+      h_vec(j) = mpd_[joint_i].h_inf[j];
     }
-    return std::pair<Eigen::MatrixXd, Eigen::VectorXd>(h_a_mat, h_b_mat);
+    const Eigen::VectorXd shift = h_mat.col(0) * pos_range_correction_(joint_i);
+    Eigen::MatrixXd a_mat(2 * n_inf, kJointSetDim);
+    a_mat << h_mat, -h_mat;
+    Eigen::VectorXd b_vec(2 * n_inf);
+    b_vec << h_vec + shift, h_vec - shift;
+    return std::pair<Eigen::MatrixXd, Eigen::VectorXd>(a_mat, b_vec);
   }
 
   std::pair<Eigen::MatrixXd, Eigen::VectorXd> CallInvariantSetScaledGetAPI(int joint_i) {
@@ -421,9 +426,9 @@ class FAOCCubicApprox : public FAOC<kJointSetDim> {
     threadpool thpool = nullptr;
     for (auto& rpd_i : rpd_) {
       computeResetTraj(static_cast<void*>(&rpd_i));
-      if (reset_sync_) {
-        syncTrajs(rpd_.data(), n_joints_, thpool);
-      }
+    }
+    if (reset_sync_) {
+      syncTrajs(rpd_.data(), n_joints_, thpool);
     }
 
     if (const auto result_it = std::ranges::find_if(rpd_, [](auto const& data) { return data.planner_ret != TRAJ_OK; });

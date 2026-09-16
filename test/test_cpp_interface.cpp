@@ -16,7 +16,6 @@ JointData GetJointData() {
 }  // namespace
 
 TEST(PolynomialMPCMusashiFAOC, TestAllXYMusashiFAOCScenarios) {
-  return;
   const float tau_c = 0.008;
   const int n_l = 4;
   const int n_joints = static_cast<int>(GetJointData().mirroring_logic.size());
@@ -66,7 +65,6 @@ TEST(PolynomialMPCMusashiFAOC, TestAllXYMusashiFAOCScenarios) {
 }
 
 TEST(PolynomialMPCMusashiFAOC, TestInverseMapXYMusashiFAOC) {
-  return;
   const float tau_c = 0.008;
   const int n_l = 4;
   const int n_joints = static_cast<int>(GetJointData().mirroring_logic.size());

@@ -4,7 +4,7 @@ import unittest
 import numpy as np
 import matplotlib.pyplot as plt
 from faoc import CubicSpline, MPOnlineSettings, JointData, ObjectiveFunction
-from faoc_utils import EXIT_SUCCESSFUL, get_solution_dict, plot_solution, stack_solution
+from faoc_utils import EXIT_SUCCESSFUL, get_solution_dict, plot_invariant_set, plot_solution, stack_solution
 
 FAOC_PLOT_TESTS = 0
 
@@ -109,6 +109,10 @@ def xy_mirror(vec: np.ndarray) -> np.ndarray:
     return vec
 
 
+def plots_enabled() -> bool:
+    return int(os.getenv("FAOC_PLOT_TESTS", str(FAOC_PLOT_TESTS))) == 1
+
+
 # pylint: disable=too-many-statements
 def test_abstract_multistep():
     """This test first uses the pre-defined initial joint state and abstract actions to recursively call the multistep
@@ -205,7 +209,7 @@ def test_abstract_multistep():
             assert np.all(np.isclose(sol["complete_vel"][j][-step_size:], sol["vel"][j]))
             assert np.all(np.isclose(sol["complete_acc"][j][-step_size:], sol["acc"][j]))
 
-        if os.getenv("FAOC_PLOT_TESTS", FAOC_PLOT_TESTS) == 1:
+        if plots_enabled():
             plot_solution(sol, solution_type="last", final_action=final_action, show=False)
 
         # Save action in joint space for second part of test
@@ -234,7 +238,7 @@ def test_abstract_multistep():
         full_t_sol = np.concatenate((full_t_sol[:fusion_idx], t_sol))
         full_u_sol = np.hstack((full_u_sol[:, :fusion_idx], u_sol))
 
-    if os.getenv("FAOC_PLOT_TESTS", FAOC_PLOT_TESTS) == 1:
+    if plots_enabled():
         plt.show()
 
     complete_u = stack_solution(get_solution_dict(faoc, "complete")["complete_pos"])
@@ -321,7 +325,7 @@ def test_tolerance():
         p_diff = np.gradient(complete_sol["complete_pos"][j]) / np.gradient(complete_sol["complete_t_u"][j])
         assert np.median(np.abs(p_diff[1:-1] - complete_sol["complete_vel"][j][1:-1])) < 1e-4
 
-    if os.getenv("FAOC_PLOT_TESTS", FAOC_PLOT_TESTS) == 1:
+    if plots_enabled():
         plot_solution(complete_sol, solution_type="complete")
 
 
@@ -517,6 +521,72 @@ def test_faoc_approx_1d():
         )
 
 
+def test_invariant_set_unscaled():
+    """The MCIS returned in physical units must agree with the internal membership check, also when the position
+    limits are not symmetric about zero."""
+    joint_data = JointData(
+        joint_mirroring=[1, 1],
+        joint_pos_min=[-0.2, -0.675],
+        joint_pos_max=[1.0, 0.675],
+        joint_vel_max=[4.0, 4.0],
+        joint_acc_max=[10.8, 15.7],
+        joint_jerk_max=[600.0, 600.0],
+    )
+    n_joints = len(joint_data.mirroring_logic)
+    faoc = CubicSpline(
+        tau_c=0.01,
+        n_l=5,
+        sampling_freq=1000,
+        n_joints=n_joints,
+        joint_data=joint_data,
+        online_settings=MPOnlineSettings(),
+        abstract_set_dim=2,
+    )
+    assert faoc.initialize(ObjectiveFunction.magnitude) == EXIT_SUCCESSFUL
+
+    pos_lims = faoc.get_position_limits()
+    vel_lims = faoc.get_velocity_limits()
+    acc_lims = faoc.get_acceleration_limits()
+    assert np.allclose(pos_lims, np.column_stack((joint_data.pos_min, joint_data.pos_max)))
+
+    sets = [faoc.get_max_controlled_invariant_set(j) for j in range(n_joints)]
+    for j, (a_mat, b_vec) in enumerate(sets):
+        h_mat, h_vec = faoc.get_max_controlled_invariant_set_scaled(j)
+        assert h_mat.shape == (len(h_vec), 3)
+        assert a_mat.shape == (2 * len(h_vec), 3)
+        assert b_vec.shape == (2 * len(h_vec),)
+
+    rng = np.random.default_rng(0)
+    n_samples = 2000
+    n_inside = np.zeros(n_joints, dtype=int)
+    for _ in range(n_samples):
+        state = np.column_stack(
+            (
+                rng.uniform(pos_lims[:, 0], pos_lims[:, 1]),
+                rng.uniform(-vel_lims, vel_lims),
+                rng.uniform(-acc_lims, acc_lims),
+            )
+        )
+        code, inside = faoc.check_state_in_invariant_set(state)
+        assert code == EXIT_SUCCESSFUL
+        for j, (a_mat, b_vec) in enumerate(sets):
+            assert bool(np.all(a_mat @ state[j] <= b_vec + 1e-9)) == bool(inside[j])
+        n_inside += inside
+    assert np.all(n_inside > 0) and np.all(n_inside < n_samples)
+
+    a_mat, b_vec = sets[0]
+    assert np.all(a_mat @ np.array([0.9, 0.0, 0.0]) <= b_vec)
+    assert not np.all(a_mat @ np.array([-0.9, 0.0, 0.0]) <= b_vec)
+
+    if plots_enabled():
+        fig = plt.figure(figsize=(6 * n_joints, 5))
+        for j, (a_mat, b_vec) in enumerate(sets):
+            ax = fig.add_subplot(1, n_joints, j + 1, projection="3d")
+            limits = np.array([pos_lims[j], [-vel_lims[j], vel_lims[j]], [-acc_lims[j], acc_lims[j]]])
+            plot_invariant_set(a_mat, b_vec, ax, state_limits=limits, title=f"Joint {j + 1} MCIS")
+        plt.show()
+
+
 class TestFAOCBindings(unittest.TestCase):
     """Test suite for FAOC Python bindings"""
 
@@ -544,6 +614,11 @@ class TestFAOCBindings(unittest.TestCase):
         """Wrapper for test_faoc_approx_1d"""
         print("Test 5", flush=True)
         test_faoc_approx_1d()
+
+    def test_invariant_set_unscaled_method(self):
+        """Wrapper for test_invariant_set_unscaled"""
+        print("Test 6", flush=True)
+        test_invariant_set_unscaled()
 
 
 if __name__ == "__main__":
