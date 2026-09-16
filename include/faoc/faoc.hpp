@@ -101,7 +101,7 @@ struct MPOnlineSettings {
       throw std::runtime_error(ErrorFormatter() << "Optimization time buffer must be >=0 but got " << opt_buffer);
     }
     if (hard_online && max_opt_time == 0) {
-      throw std::runtime_error(ErrorFormatter() << "Optimization time buffer cannot be zero with hard online mode");
+      throw std::runtime_error(ErrorFormatter() << "Max optimization time cannot be zero with hard online mode");
     }
   }
 };
@@ -521,7 +521,7 @@ class FAOC {
   /// @param x_0 The initial joint state. Should be a matrix of size NxX, where N is the number of joints and X is the
   /// state dimension
   /// @return Returns <status_code, vector>. Status is EXIT_SUCCESS on success, otherwise a failure code. The vector
-  /// contains one integer per joint: 0 if inside the max controlled invariant set, 1 otherwise.
+  /// contains one integer per joint: 1 if inside the max controlled invariant set, 0 otherwise.
   std::pair<int, Eigen::VectorXi> CheckStateInInvariantSet(XState x_0) {
     if (x_0.rows() != n_joints_) {
       LOG(ERROR) << "State must have " << n_joints_ << " rows but got " << x_0.rows();
@@ -730,6 +730,7 @@ class FAOC {
   [[nodiscard]] XAction GetLastJointAction() const { return y_n_l_ph_; }
   [[nodiscard]] XState GetLastJointState() const { return x_n_l_actual_ph_; }
   [[nodiscard]] ZState GetLastAbstractAction() const { return z_n_l_ph_; }
+  /// @brief Max controlled invariant set in physical units as {x | A x <= b}, returned as <A, b>.
   [[nodiscard]] std::pair<Eigen::MatrixXd, Eigen::VectorXd> GetMaxControlledInvariantSet(int joint_i) {
     if (!solver_initialized_) {
       LOG(ERROR) << "Solver not yet initialized";
@@ -739,6 +740,7 @@ class FAOC {
     return CallInvariantSetGetAPI(joint_i);
   }
 
+  /// @brief Max controlled invariant set in scaled coordinates as {x | -h <= H x <= h}, returned as <H, h>.
   [[nodiscard]] std::pair<Eigen::MatrixXd, Eigen::VectorXd> GetMaxControlledInvariantSetScaled(int joint_i) {
     if (!solver_initialized_) {
       LOG(ERROR) << "Solver not yet initialized";
@@ -751,8 +753,8 @@ class FAOC {
   [[nodiscard]] Eigen::MatrixXd GetPositionLimits() {
     Eigen::MatrixXd result(n_joints_, 2);
     for (int i = 0; i < n_joints_; ++i) {
-      result(i, 0) = mpd_[i].joint_lims.qlow;
-      result(i, 1) = mpd_[i].joint_lims.qup;
+      result(i, 0) = mpd_[i].joint_lims.qlow + pos_range_correction_(i);
+      result(i, 1) = mpd_[i].joint_lims.qup + pos_range_correction_(i);
     }
     return result;
   }

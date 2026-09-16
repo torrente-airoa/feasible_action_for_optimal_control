@@ -35,7 +35,7 @@ PYBIND11_MODULE(faoc, m) {
          py::arg("abstract_set_dim"))
     .def("initialize", &FAOCCubicApprox::Initialize, py::arg("obj_func"), py::arg("n_threads") = 1)
     .def("initialize_reset_planner", &FAOCCubicApprox::InitializeResetPlanner, py::arg("p_reset_low"),
-         py::arg("p_reset_up"), py::arg("mult") = 2, py::arg("add_steps") = 0, py::arg("n_threads") = 1,
+         py::arg("p_reset_up"), py::arg("mult") = 2, py::arg("add_steps") = 3, py::arg("n_threads") = 1,
          py::arg("max_n_l") = 200, py::arg("reset_sync") = false)
     .def("set_tolerances", &FAOCCubicApprox::SetTolerances, py::arg("p_tol"), py::arg("v_tol"))
     .def("set_velocity_limit_gain", &FAOCCubicApprox::SetVelocityLimitGain, py::arg("v_gain"))

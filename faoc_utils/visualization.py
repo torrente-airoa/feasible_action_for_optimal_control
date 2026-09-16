@@ -2,8 +2,89 @@ import itertools
 import numpy as np
 from typing import Optional
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from faoc_utils.solution import EXIT_SUCCESSFUL
 from faoc import CubicSpline, MPOnlineSettings, JointData, ObjectiveFunction
+
+
+def polytope_vertices(a_mat: np.ndarray, b_vec: np.ndarray, tol: float = 1e-8) -> np.ndarray:
+    """Vertices of the 3D polytope {x | A x <= b}, found by intersecting all triples of planes."""
+    a_mat = np.asarray(a_mat, dtype=float)
+    b_vec = np.asarray(b_vec, dtype=float)
+    n_rows = a_mat.shape[0]
+    slack_tol = tol * np.maximum(1.0, np.abs(b_vec))
+    rng = np.random.default_rng(0)
+    probe = rng.choice(n_rows, size=min(16, n_rows), replace=False)
+    found = []
+    for i in range(n_rows - 2):
+        pairs = np.array(list(itertools.combinations(range(i + 1, n_rows), 2)))
+        planes = np.stack((np.broadcast_to(a_mat[i], (len(pairs), 3)), a_mat[pairs[:, 0]], a_mat[pairs[:, 1]]), axis=1)
+        rhs = np.stack((np.full(len(pairs), b_vec[i]), b_vec[pairs[:, 0]], b_vec[pairs[:, 1]]), axis=1)
+        det = np.linalg.det(planes)
+        ok = np.abs(det) > 1e-12 * np.prod(np.linalg.norm(planes, axis=2), axis=1)
+        points = np.linalg.solve(planes[ok], rhs[ok][..., None])[..., 0]
+        ok = np.all(points @ a_mat[probe].T <= b_vec[probe] + slack_tol[probe], axis=1)
+        points = points[ok]
+        ok = np.all(points @ a_mat.T <= b_vec + slack_tol, axis=1)
+        found.append(points[ok])
+    vertices = np.vstack(found)
+    scale = np.maximum(np.max(np.abs(vertices), axis=0), 1e-12)
+    _, keep = np.unique(np.round(vertices / scale, 7), axis=0, return_index=True)
+    return np.asarray(vertices[np.sort(keep)])
+
+
+def polytope_faces(a_mat: np.ndarray, b_vec: np.ndarray, vertices: np.ndarray, tol: float = 1e-7) -> list[np.ndarray]:
+    """Polygons (vertices ordered around each facet) of the 3D polytope {x | A x <= b}."""
+    a_mat = np.asarray(a_mat, dtype=float)
+    b_vec = np.asarray(b_vec, dtype=float)
+    scale = np.maximum(np.max(np.abs(vertices), axis=0), 1e-12)
+    faces = []
+    for normal, offset in zip(a_mat, b_vec):
+        tight = np.abs(vertices @ normal - offset) <= tol * (1.0 + np.abs(offset))
+        if np.count_nonzero(tight) < 3:
+            continue
+        pts = vertices[tight] / scale
+        center = pts.mean(axis=0)
+        u = pts[0] - center
+        u /= np.linalg.norm(u)
+        w = np.cross(normal * scale, u)
+        w /= np.linalg.norm(w)
+        angles = np.arctan2((pts - center) @ w, (pts - center) @ u)
+        faces.append(vertices[tight][np.argsort(angles)])
+    return faces
+
+
+def plot_invariant_set(
+    a_mat: np.ndarray,
+    b_vec: np.ndarray,
+    ax,
+    state_limits: Optional[np.ndarray] = None,
+    title: Optional[str] = None,
+) -> np.ndarray:
+    """Draws the polytope {x | A x <= b} on a 3D axis and returns its vertices.
+
+    state_limits is an optional 3x2 array of (min, max) per state used to draw the kinematic box for reference.
+    """
+    vertices = polytope_vertices(a_mat, b_vec)
+    faces = polytope_faces(a_mat, b_vec, vertices)
+    ax.add_collection3d(Poly3DCollection(faces, alpha=0.35, facecolor="tab:blue", edgecolor="k", linewidth=0.3))
+    lo, hi = vertices.min(axis=0), vertices.max(axis=0)
+    if state_limits is not None:
+        state_limits = np.asarray(state_limits, dtype=float)
+        corners = np.array(list(itertools.product(*state_limits)))
+        for c_0, c_1 in itertools.combinations(corners, 2):
+            if np.count_nonzero(c_0 != c_1) == 1:
+                ax.plot(*zip(c_0, c_1), color="tab:red", linewidth=0.8)
+        lo, hi = state_limits[:, 0], state_limits[:, 1]
+    ax.set_xlim(lo[0], hi[0])
+    ax.set_ylim(lo[1], hi[1])
+    ax.set_zlim(lo[2], hi[2])
+    ax.set_xlabel("pos")
+    ax.set_ylabel("vel")
+    ax.set_zlabel("acc")
+    if title is not None:
+        ax.set_title(title)
+    return vertices
 
 
 def sample_mapping(faoc: CubicSpline, sampled_points: np.ndarray, initial_state: np.ndarray) -> np.ndarray:

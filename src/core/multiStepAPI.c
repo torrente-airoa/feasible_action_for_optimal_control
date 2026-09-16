@@ -356,7 +356,7 @@ void computeMaxCtrlInvSetSymmetric(void *arg) {
   // (F) save maximum control invariant set
   mpd->n_inf = m_k;
   mpd->H_inf = malloc(mpd->n_inf * sizeof(double *));
-  mpd->H_inf_rm = malloc(mpd->n_inf * mpd->mapd->dim * sizeof(double *));
+  mpd->H_inf_rm = malloc(mpd->n_inf * mpd->mapd->dim * sizeof(double));
   mpd->h_inf = malloc(mpd->n_inf * sizeof(double));
   for (int i = 0; i < mpd->n_inf; i++) {
     mpd->H_inf[i] = H_k[i];
