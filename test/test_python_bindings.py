@@ -587,6 +587,52 @@ def test_invariant_set_unscaled():
         plt.show()
 
 
+def test_inverse_map_offset_invariance():
+    """Shifting the position limits and the whole problem by a constant must leave the abstract action
+    unchanged and shift the joint action by exactly that constant."""
+
+    def solve_shifted(shift: float):
+        joint_data = JointData(
+            joint_mirroring=[0, 0],
+            joint_pos_min=[-1.0 + shift, -1.0 + shift],
+            joint_pos_max=[1.0 + shift, 1.0 + shift],
+            joint_vel_max=[2.0, 2.0],
+            joint_acc_max=[8.0, 8.0],
+            joint_jerk_max=[80.0, 80.0],
+        )
+        faoc = CubicSpline(
+            tau_c=0.02,
+            n_l=5,
+            sampling_freq=1000,
+            n_joints=2,
+            joint_data=joint_data,
+            online_settings=MPOnlineSettings(),
+            abstract_set_dim=2,
+        )
+        assert faoc.initialize(ObjectiveFunction.magnitude) == EXIT_SUCCESSFUL
+
+        x_0 = np.zeros((2, 3))
+        x_0[:, 0] = shift
+        assert faoc.set_initial_state(x_0.copy()) == EXIT_SUCCESSFUL
+
+        wanted = np.array([[0.004 + shift, 0.05], [0.004 + shift, 0.05]])
+        code, z_action = faoc.map_to_abstract_set(wanted.copy())
+        assert code == EXIT_SUCCESSFUL
+        assert faoc.set_abstract_action_and_solve(z_action) == EXIT_SUCCESSFUL
+        reached = faoc.get_last_joint_action()
+
+        # A target inside the feasible set must come back out of the round trip unchanged
+        assert np.allclose(reached, wanted, atol=1e-9)
+        return z_action, reached
+
+    z_centred, reached_centred = solve_shifted(0.0)
+    z_offset, reached_offset = solve_shifted(0.5)
+
+    assert np.allclose(z_centred, z_offset, atol=1e-9)
+    assert np.allclose(reached_offset[:, 0] - reached_centred[:, 0], 0.5, atol=1e-9)
+    assert np.allclose(reached_offset[:, 1], reached_centred[:, 1], atol=1e-9)
+
+
 class TestFAOCBindings(unittest.TestCase):
     """Test suite for FAOC Python bindings"""
 
@@ -619,6 +665,11 @@ class TestFAOCBindings(unittest.TestCase):
         """Wrapper for test_invariant_set_unscaled"""
         print("Test 6", flush=True)
         test_invariant_set_unscaled()
+
+    def test_inverse_map_offset_invariance_method(self):
+        """Wrapper for test_inverse_map_offset_invariance"""
+        print("Test 7", flush=True)
+        test_inverse_map_offset_invariance()
 
 
 if __name__ == "__main__":

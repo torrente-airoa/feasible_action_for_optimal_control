@@ -621,8 +621,6 @@ class FAOC {
       return std::pair<int, ZState>(static_cast<int>(SolveReturnCodes::kBadAction), z_zero_state_ph_);
     }
 
-    x_action.col(0) -= pos_range_correction_;
-
     for (int i = 0; i < n_joints_; ++i) {
       if (!CallInvariantSetCheckAPI(i)) {
         LOG(ERROR) << "Initial state is not inside the maximum control invariant set (joint " << i << ")!";

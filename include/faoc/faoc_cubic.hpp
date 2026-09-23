@@ -389,6 +389,7 @@ class FAOCCubicApprox : public FAOC<kJointSetDim> {
   }
 
   void SetJointAction(XAction x_action) {
+    y_n_l_ph_ = x_action;
     x_action.col(0) -= pos_range_correction_;
 
     // Set final state in joint space
@@ -398,7 +399,6 @@ class FAOCCubicApprox : public FAOC<kJointSetDim> {
         mpd_[i].mapd->y_N_l[j] *= scaling_action_[i](0, j);
       }
     }
-    y_n_l_ph_ = x_action;
   }
 
   int SolutionUpdate() {

@@ -160,6 +160,7 @@ int main(void) {
   srand(0);  // to get different initializations of the RNG use time(NULL) as argument
   struct timespec start, end;
   double run_time = 0;
+  double max_step_time = 0;  // maximum wall-clock time of a single step (all joints)
 
   int n_breaks = 0;
   for (int j = 0; j < n_episodes; j++) {
@@ -193,7 +194,9 @@ int main(void) {
       }
       if (PARALLEL_MULTI) thpool_wait(thpool);
       clock_gettime(CLOCK_REALTIME, &end);
-      run_time += (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+      double step_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+      run_time += step_time;
+      if (step_time > max_step_time) max_step_time = step_time;
 
       // check if computations were done right
       int BREAK = 0;
@@ -217,8 +220,8 @@ int main(void) {
   char thr_info[20];
   sprintf(thr_info, "%d thread%s", (PARALLEL_MULTI) ? (n_threads_multi) : (1),
           (PARALLEL_MULTI && (n_threads_multi > 1)) ? ("s") : (""));
-  printf("Total/avg runtime of computeStep() for all %d joints (%s): %.3fs/%.3fus.\n", n_joints, thr_info, run_time,
-         (run_time / (n_episodes * n_steps)) * 1e6);
+  printf("Total/avg/max runtime of computeStep() for all %d joints (%s): %.3fs/%.3fus/%.3fus.\n", n_joints, thr_info,
+         run_time, (run_time / (n_episodes * n_steps)) * 1e6, max_step_time * 1e6);
   printf("Number of successfully completed episodes each with %d steps: %d/%d\n", n_steps, n_episodes - n_breaks,
          n_episodes);
 
