@@ -249,7 +249,7 @@ int redundancyElimination(const double **H, const double *h, const int m, const 
     model.blower[i] = model.bupper[i];
 
     // solve problem
-    daqp_update_ldp(update_mask, &work, work.qp);
+    daqp_update_ldp_cold(update_mask, &work, work.qp);
     // daqp_deactivate_constraints(&work); // coldstart
     // reset_daqp_workspace(&work);
     // activate_constraints(&work);
@@ -1028,7 +1028,7 @@ int mpcBisect(DAQPProblem *model, DAQPWorkspace *work, const int dim, const doub
     if (ret < 0) return ret;
 
     // solve the MPC problem
-    ret = daqp_update_ldp(update_mask, work, work->qp);
+    ret = daqp_update_ldp_cold(update_mask, work, work->qp);
     if (ret < 0) return ret;
     exit_flag = daqp_ldp(work);
 
@@ -1081,7 +1081,7 @@ int mpcBisect(DAQPProblem *model, DAQPWorkspace *work, const int dim, const doub
       N_l_min = (int)min((double)(N_l_min + bs_params->add_steps), (double)(N_l_max));
       ret = mpcProb(model, work, dim, A, rowcoef, x_max, u_max, N_l_min, x_0, x_f, udddh_m1, obj_type);
       if (ret < 0) return ret;
-      ret = daqp_update_ldp(update_mask, work, work->qp);
+      ret = daqp_update_ldp_cold(update_mask, work, work->qp);
       if (ret < 0) return ret;
       exit_flag = daqp_ldp(work);
       if (exit_flag == DAQP_EXIT_OPTIMAL) {
@@ -1271,14 +1271,14 @@ int mpcSolve(DAQPProblem *model, DAQPWorkspace *work, const int dim, const doubl
   // solve the MPC problem
   int update_mask =
     DAQP_UPDATE_Rinv + DAQP_UPDATE_M + DAQP_UPDATE_v + DAQP_UPDATE_d + DAQP_UPDATE_sense;  // update everything
-  ret = daqp_update_ldp(update_mask, work, work->qp);
+  ret = daqp_update_ldp_cold(update_mask, work, work->qp);
   if (ret < 0)  // Note: The problem seems to be related to an invalid sense vector
   {
     // as a workaround perform a coldstart
     for (int iota = 0; iota < (model->m - dim); iota++) model->sense[iota] = 0;
     for (int iota = model->m - dim; iota < model->m; iota++)
       model->sense[iota] = DAQP_ACTIVE + DAQP_IMMUTABLE;  // terminal state constraint is an equality constraint
-    ret = daqp_update_ldp(update_mask, work, work->qp);
+    ret = daqp_update_ldp_cold(update_mask, work, work->qp);
     if (ret < 0) return ret;  // coldstart did not help
   }
   int exit_flag = daqp_ldp(work);

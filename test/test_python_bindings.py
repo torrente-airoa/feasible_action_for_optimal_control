@@ -676,3 +676,50 @@ if __name__ == "__main__":
     np.random.seed(0)
     np.set_printoptions(precision=5, suppress=True)
     unittest.main()
+
+
+def test_solution_independent_of_history():
+    """The same actions from the same state give the same trajectory, whatever was solved before.
+
+    DAQP warm-starts from the previous active set, which is only harmless when the optimum is
+    unique; the mapping LPs are solved from a cleared working set for that reason.
+    """
+    faoc = CubicSpline(
+        tau_c=0.01,
+        n_l=5,
+        sampling_freq=1000,
+        n_joints=N_JOINTS,
+        joint_data=JOINT_DATA,
+        online_settings=MPOnlineSettings(),
+        abstract_set_dim=2,
+    )
+    assert faoc.initialize(ObjectiveFunction.magnitude) == EXIT_SUCCESSFUL
+    rng = np.random.default_rng(0)
+    x0 = np.hstack((INIT, np.zeros((N_JOINTS, 1))))
+    actions = rng.uniform(-1.0, 1.0, (30, N_JOINTS, 2))
+
+    def rollout(acts):
+        faoc.reset()
+        assert faoc.set_initial_state(x0.copy()) == EXIT_SUCCESSFUL
+        out = []
+        for z in acts:
+            assert faoc.set_abstract_action_and_solve(z.copy()) == EXIT_SUCCESSFUL
+            out.append(faoc.get_last_joint_action().copy())
+        return np.array(out)
+
+    first = rollout(actions)
+
+    # unrelated work in between: invert the trajectory just produced, then a different rollout
+    faoc.reset()
+    assert faoc.set_initial_state(x0.copy()) == EXIT_SUCCESSFUL
+    for target in first:
+        code, z = faoc.map_to_abstract_set(target.copy())
+        assert code == EXIT_SUCCESSFUL
+        assert faoc.set_abstract_action_and_solve(z) == EXIT_SUCCESSFUL
+        assert np.abs(faoc.get_last_joint_action() - target).max() < 1e-9
+    rollout(rng.uniform(-1.0, 1.0, (30, N_JOINTS, 2)))
+
+    again = rollout(actions)
+    # the MPC stays warm-started, so the iteration path differs and agreement is to solver
+    # tolerance (about 1e-10 over 30 steps); the history dependence being guarded against was 1e-2
+    assert np.abs(again - first).max() < 1e-8

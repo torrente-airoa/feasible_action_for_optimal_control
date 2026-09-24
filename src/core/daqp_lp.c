@@ -7,6 +7,32 @@ static void compute_CSP_lp(DAQPWorkspace *work);
 static int compute_projgrad(DAQPWorkspace *work);
 static int remove_constraint_lp(DAQPWorkspace *work);
 
+int daqp_update_ldp_cold(int update_mask, DAQPWorkspace *work, DAQPProblem *qp) {
+  // for the LPs, whose optimum is a face: warm-started, the vertex returned depended on the
+  // previous call. The reset must precede the update, which re-activates the immutable constraints.
+  daqp_deactivate_constraints(work);
+  reset_daqp_workspace(work);
+  return daqp_update_ldp(update_mask, work, qp);
+}
+
+int daqp_ldp_retry(int update_mask, DAQPWorkspace *work, DAQPProblem *qp) {
+  // for the strictly convex problems, whose optimum is unique so a warm start only saves
+  // iterations. A stale active set can still report infeasible, and on a degenerate problem the
+  // MPC's tolerances (1e-11, far below DAQP's defaults) make its active set cycle even from cold,
+  // so the retry is cold and at DAQP's default tolerances with a wider cycle guard.
+  int exit_flag = daqp_ldp(work);
+  if (exit_flag != DAQP_EXIT_OPTIMAL) {
+    DAQPSettings kept = *work->settings;
+    work->settings->primal_tol = DAQP_DEFAULT_PRIM_TOL;
+    work->settings->zero_tol = DAQP_DEFAULT_ZERO_TOL;
+    work->settings->cycle_tol = 10 * DAQP_DEFAULT_CYCLE_TOL;
+    daqp_update_ldp_cold(update_mask, work, qp);
+    exit_flag = daqp_ldp(work);
+    *work->settings = kept;
+  }
+  return exit_flag;
+}
+
 int daqp_lp(DAQPWorkspace *work) {
   int i, total_iter = 0;
   // const int nx = work->n;
