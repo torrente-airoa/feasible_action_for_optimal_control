@@ -6,6 +6,7 @@
 
 #include "daqp/constants.h"
 #include "daqp/utils.h"
+#include "daqp_lp.h"
 #include "math_utils.h"
 
 static int validateRuntimeBounds(const map_runtime_bounds *bounds) {
@@ -272,7 +273,7 @@ map_ret_code mapFromAbstractSetWithBounds(map_data *mapd, const int n_inf, const
     // mapd->beta_comp.blower[N_l] = -DAQP_INF; // Note: Has no effect.
     mapd->beta_comp.sense[N_l] = DAQP_ACTIVE + DAQP_LOWER;  // Note: Sufficient to do this once, but ok this way.
     update_mask = DAQP_UPDATE_M + DAQP_UPDATE_sense + DAQP_UPDATE_v;
-    daqp_update_ldp(update_mask, &(mapd->beta_work), mapd->beta_work.qp);
+    daqp_update_ldp_cold(update_mask, &(mapd->beta_work), mapd->beta_work.qp);
     exit_flag = daqp_prox(&(mapd->beta_work));
     if (exit_flag != DAQP_EXIT_OPTIMAL) {
       daqp_deactivate_constraints(&(mapd->beta_work));
@@ -369,7 +370,7 @@ map_ret_code mapToAbstractSetWithBounds(map_data *mapd, const int n_inf, const m
     // activate lower bound in initial working set
     mapd->beta_comp.sense[N_l] = DAQP_ACTIVE + DAQP_LOWER;
     update_mask = DAQP_UPDATE_M + DAQP_UPDATE_sense + DAQP_UPDATE_v;
-    daqp_update_ldp(update_mask, &(mapd->beta_work), mapd->beta_work.qp);
+    daqp_update_ldp_cold(update_mask, &(mapd->beta_work), mapd->beta_work.qp);
     exit_flag = daqp_prox(&(mapd->beta_work));
     if (exit_flag != DAQP_EXIT_OPTIMAL) {
       daqp_deactivate_constraints(&(mapd->beta_work));
@@ -414,7 +415,7 @@ map_ret_code getActionSetPosWithBounds(map_data *mapd, const int n_inf, const ma
   // (i) compute lower bound of action set
   // update lhs and rhs vectors of inequality constraints (dependent on x_0)
   applyFeasibleBoundsToPosSet(mapd, n_inf, bounds);
-  daqp_update_ldp(update_mask, &(mapd->pos_work), mapd->pos_work.qp);
+  daqp_update_ldp_cold(update_mask, &(mapd->pos_work), mapd->pos_work.qp);
   exit_flag = daqp_prox(&(mapd->pos_work));
   if (exit_flag != DAQP_EXIT_OPTIMAL) {
     daqp_deactivate_constraints(&(mapd->pos_work));
@@ -428,7 +429,7 @@ map_ret_code getActionSetPosWithBounds(map_data *mapd, const int n_inf, const ma
   for (int i = 0; i < N_l; i++) mapd->pos_set.f[i] = -mapd->pos_set.f[i];  // update objective gradient (to maximize)
   for (int iota = 0; iota < mapd->pos_set.m; iota++)
     mapd->pos_set.sense[iota] = 0;  // reset sense vector (to avoid warmstarting)
-  daqp_update_ldp(update_mask, &(mapd->pos_work), mapd->pos_work.qp);
+  daqp_update_ldp_cold(update_mask, &(mapd->pos_work), mapd->pos_work.qp);
   exit_flag = daqp_prox(&(mapd->pos_work));
   if (exit_flag != DAQP_EXIT_OPTIMAL) {
     daqp_deactivate_constraints(&(mapd->pos_work));
@@ -467,7 +468,7 @@ map_ret_code getIntPointActionSetWithBounds(map_data *mapd, const int n_inf, con
 
   // (i) compute Chebyshev center of feasible input set
   applyFeasibleBoundsToChebyshev(mapd, n_inf, bounds);
-  daqp_update_ldp(update_mask, &(mapd->chebyshev_work), mapd->chebyshev_work.qp);
+  daqp_update_ldp_cold(update_mask, &(mapd->chebyshev_work), mapd->chebyshev_work.qp);
   exit_flag = daqp_prox(&(mapd->chebyshev_work));
   if (exit_flag != DAQP_EXIT_OPTIMAL) {
     daqp_deactivate_constraints(&(mapd->chebyshev_work));
@@ -484,7 +485,7 @@ map_ret_code getIntPointActionSetWithBounds(map_data *mapd, const int n_inf, con
     double e_tilde[2] = {0};
     matVecMul(2, 2, (const double **)mapd->G_inv, e, e_tilde);  // take scaling of inf-norm ball into account
     applyFeasibleBoundsToDirectChebyshev(mapd, n_inf, bounds->lower, bounds->upper, e_tilde);
-    daqp_update_ldp(update_mask, &(mapd->direct_work), mapd->direct_work.qp);
+    daqp_update_ldp_cold(update_mask, &(mapd->direct_work), mapd->direct_work.qp);
     exit_flag = daqp_prox(&(mapd->direct_work));
     if (exit_flag != DAQP_EXIT_OPTIMAL) {
       daqp_deactivate_constraints(&(mapd->direct_work));
@@ -504,7 +505,7 @@ map_ret_code getIntPointActionSetWithBounds(map_data *mapd, const int n_inf, con
     mapd->direct_unique.bupper[0] = r_actset;
 
     // update problem and solve
-    daqp_update_ldp(update_mask, &(mapd->direct_unique_work), mapd->direct_unique_work.qp);
+    daqp_update_ldp_cold(update_mask, &(mapd->direct_unique_work), mapd->direct_unique_work.qp);
     exit_flag = daqp_prox(&(mapd->direct_unique_work));  // solve non-strongly convex QP
     if (exit_flag != DAQP_EXIT_OPTIMAL) {
       daqp_deactivate_constraints(&(mapd->direct_unique_work));
@@ -584,7 +585,7 @@ map_ret_code getIntPointActionSetWithBounds(map_data *mapd, const int n_inf, con
 
     // update problem and solve
     daqp_update_ldp(update_mask, &(mapd->unique_work), mapd->unique_work.qp);
-    exit_flag = daqp_ldp(&(mapd->unique_work));  // solve strongly convex QP
+    exit_flag = daqp_ldp_retry(update_mask, &(mapd->unique_work), mapd->unique_work.qp);  // solve strongly convex QP
     if (exit_flag != DAQP_EXIT_OPTIMAL) {
       daqp_deactivate_constraints(&(mapd->unique_work));
       reset_daqp_workspace(&(mapd->unique_work));

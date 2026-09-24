@@ -1,6 +1,7 @@
 #include "multiStepAPI.h"
 
 #include "daqp/utils.h"
+#include "daqp_lp.h"
 #include "helper.h"
 #include "math_utils.h"
 
@@ -492,7 +493,7 @@ int mpcPlanner(mpdata *mpd) {
   // solve problem
   update_mask = DAQP_UPDATE_v + DAQP_UPDATE_sense;
   daqp_update_ldp(update_mask, &(mpd->mpc_work), mpd->mpc_work.qp);
-  exit_flag = daqp_ldp(&(mpd->mpc_work));
+  exit_flag = daqp_ldp_retry(update_mask, &(mpd->mpc_work), mpd->mpc_work.qp);
 
   if (exit_flag != DAQP_EXIT_OPTIMAL) {
     daqp_deactivate_constraints(&(mpd->mpc_work));
